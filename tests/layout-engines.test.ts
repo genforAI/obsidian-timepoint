@@ -252,4 +252,58 @@ describe("real-time timeline", () => {
       }
     }
   });
+
+  it("packs a dense cluster into a bounded number of preview lanes", () => {
+    const cardGap = 7;
+    const result = calculateRealtimeTimelineLayout(
+      Array.from({ length: 24 }, (_, index) => ({
+        id: `dense-${index.toString().padStart(2, "0")}`,
+        minuteOfDay: 450 + index * 2,
+        measuredHeight: 64,
+      })),
+      {
+        minimumHeight: 1_200,
+        topPadding: 36,
+        bottomPadding: 44,
+        cardGap,
+        maximumColumns: 4,
+      },
+    );
+
+    expect(result.columnCount).toBe(4);
+    expect(Math.max(...result.entries.map((entry) => entry.column))).toBe(3);
+    for (let column = 0; column < result.columnCount; column += 1) {
+      const entries = result.entries
+        .filter((entry) => entry.column === column)
+        .sort((left, right) => left.cardY - right.cardY);
+      for (let index = 1; index < entries.length; index += 1) {
+        const previous = entries[index - 1];
+        const current = entries[index];
+        expect(current?.cardY).toBeGreaterThanOrEqual(
+          (previous?.cardY ?? 0) + (previous?.cardHeight ?? 0) + cardGap - 1e-8,
+        );
+      }
+    }
+  });
+
+  it("extends preview space without changing the proportional 24-hour axis", () => {
+    const result = calculateRealtimeTimelineLayout(
+      Array.from({ length: 18 }, (_, index) => ({
+        id: `late-${index.toString().padStart(2, "0")}`,
+        minuteOfDay: 1_430,
+        measuredHeight: 72,
+      })),
+      {
+        minimumHeight: 720,
+        topPadding: 20,
+        bottomPadding: 20,
+        cardGap: 8,
+        maximumColumns: 2,
+      },
+    );
+
+    expect(result.axisBottom).toBe(700);
+    expect(result.totalHeight).toBeGreaterThan(720);
+    expect(result.entries.every((entry) => entry.nodeY < result.axisBottom)).toBe(true);
+  });
 });

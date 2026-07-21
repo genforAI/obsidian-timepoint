@@ -32,11 +32,19 @@ scaling, version/hash, and synthetic fixture revision. Never include personal no
 - [ ] Test widths near 320, 560, 720, 900, and 1200 px and 200% scaling.
 - [ ] Toolbar wraps/compacts without clipping; all coarse-pointer targets are at least 44 px.
 - [ ] Dense Elastic and same-time branches remain distinct without card overlap.
-- [ ] Real-time nodes remain proportional and horizontal lanes remain reachable.
+- [ ] Dense previews compact automatically while the complete Markdown remains unchanged in the
+      native editor.
+- [ ] Real-time nodes remain proportional; lanes are capped to the leaf width and packed cards do
+      not overlap.
+- [ ] Elastic → Real-time mode changes show the axis and earliest event on the first painted frame,
+      with no stale horizontal blank region.
 
 ## Native records and previews
 
 - [ ] Toolbar and axis creation each create one independent event Markdown note.
+- [ ] Rapid repeated axis clicks start only one create/editor operation at a time.
+- [ ] Hovering/clicking an occupied minute highlights its existing node without a duplicate time
+      label or full-axis accent.
 - [ ] The normal Obsidian editor opens with body focus and autosaves.
 - [ ] Double-click, pencil, Enter, and node actions reuse the native editor pane.
 - [ ] Long text, images, tables, callouts, code, embeds, and long tokens clip inside bounded cards.

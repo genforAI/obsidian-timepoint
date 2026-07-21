@@ -8,7 +8,7 @@ import { parseTimePointBlockConfig } from "./TimePointBlockConfig";
 
 interface EmbeddedEditorTarget {
   getDate(): string;
-  openAddEditor(clickedTime?: string): void;
+  openAddEditor(clickedTime?: string): void | Promise<void>;
   openEntryEditor(entry: TimePointEntry): void;
 }
 
@@ -37,12 +37,12 @@ export function registerEmbeddedTimePointProcessor(plugin: Plugin & EmbeddedProc
         onCreateAtTime: async (date, time) => {
           const view = await plugin.activateTimePoint(date);
           if (!confirmActivatedDate(view, date)) return;
-          view.openAddEditor(time);
+          await view.openAddEditor(time);
         },
         onCreateNow: async (date) => {
           const view = await plugin.activateTimePoint(date);
           if (!confirmActivatedDate(view, date)) return;
-          view.openAddEditor();
+          await view.openAddEditor();
         },
         onEditEntry: async (date, entry) => {
           const view = await plugin.activateTimePoint(date);

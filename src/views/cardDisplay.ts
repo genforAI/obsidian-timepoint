@@ -12,6 +12,8 @@ export interface CardDisplayOptions {
   naturalHeight: number;
   smartCollapseHeight: number;
   previewHeight: number;
+  /** Optional runtime density cap; it never changes persisted Markdown. */
+  densityLimit?: number | null;
 }
 
 export interface TimelineCardMeasurement {
@@ -33,9 +35,14 @@ const CONTENT_HEIGHT_TOLERANCE = 2;
  */
 export function resolveCardDisplay(options: CardDisplayOptions): CardDisplayDecision {
   const naturalHeight = normalizeHeight(options.naturalHeight);
-  const limit = normalizeHeight(
+  const configuredLimit = normalizeHeight(
     options.mode === "smart" ? options.smartCollapseHeight : options.previewHeight,
   );
+  const densityLimit =
+    options.densityLimit === null || options.densityLimit === undefined
+      ? configuredLimit
+      : normalizeHeight(options.densityLimit);
+  const limit = Math.min(configuredLimit, densityLimit);
   const clipped = naturalHeight > limit + CONTENT_HEIGHT_TOLERANCE;
   return { clipped, maxHeight: clipped ? limit : null };
 }
@@ -102,6 +109,22 @@ export function clampTimelineScrollTop(
       ? Math.max(0, scrollHeight - clientHeight)
       : 0;
   return Math.min(requested, available);
+}
+
+/**
+ * Real-time mode can contain hours of intentionally empty space before the
+ * first record. On a fresh render, keep a small amount of temporal context
+ * above that first node instead of presenting an apparently blank viewport.
+ */
+export function resolveInitialTimelineScrollTop(
+  mode: "elastic" | "realtime",
+  firstNodeY: number | undefined,
+  scrollHeight: number,
+  clientHeight: number,
+  contextAbove = 96,
+): number {
+  if (mode !== "realtime" || firstNodeY === undefined || !Number.isFinite(firstNodeY)) return 0;
+  return clampTimelineScrollTop(firstNodeY - Math.max(0, contextAbove), scrollHeight, clientHeight);
 }
 
 /**

@@ -4,6 +4,7 @@ import {
   buildStableBlockReference,
   cardHeightChangeNeedsReflow,
   clampTimelineScrollTop,
+  resolveInitialTimelineScrollTop,
   resolveCardDisplay,
   resolveTimelineCardMeasuredHeight,
   timelineMeasurementIsUsable,
@@ -14,6 +15,7 @@ import {
   isWithinTimelineAxisHitArea,
   mapTimelineYToStoredTime,
 } from "../src/views/timelineInteraction";
+import { resolveTimelineDensity } from "../src/views/timelineDensity";
 
 describe("smart card display", () => {
   it("shows short smart notes fully and collapses long smart notes", () => {
@@ -45,6 +47,18 @@ describe("smart card display", () => {
         previewHeight: 160,
       }),
     ).toEqual({ clipped: true, maxHeight: 160 });
+  });
+
+  it("applies a stricter runtime density cap without changing normal limits", () => {
+    expect(
+      resolveCardDisplay({
+        mode: "smart",
+        naturalHeight: 640,
+        smartCollapseHeight: 320,
+        previewHeight: 160,
+        densityLimit: 24,
+      }),
+    ).toEqual({ clipped: true, maxHeight: 24 });
   });
 
   it("triggers layout reflow only for a material measured-height change", () => {
@@ -97,6 +111,13 @@ describe("smart card display", () => {
     expect(clampTimelineScrollTop(Number.NaN, 2_000, 800)).toBe(0);
   });
 
+  it("opens a fresh real-time view near its first event while preserving time context", () => {
+    expect(resolveInitialTimelineScrollTop("realtime", 640, 2_000, 800)).toBe(544);
+    expect(resolveInitialTimelineScrollTop("realtime", 60, 2_000, 800)).toBe(0);
+    expect(resolveInitialTimelineScrollTop("elastic", 640, 2_000, 800)).toBe(0);
+    expect(resolveInitialTimelineScrollTop("realtime", undefined, 2_000, 800)).toBe(0);
+  });
+
   it("reserves a card's larger scroll box when Markdown escapes its border box", () => {
     expect(resolveTimelineCardMeasuredHeight(78, 112)).toBe(112);
     expect(resolveTimelineCardMeasuredHeight(112, 78)).toBe(112);
@@ -113,6 +134,44 @@ describe("smart card display", () => {
     expect(buildStableBlockReference(source, "tp-same-time-b")).not.toBe(
       buildStableBlockReference(source, "tp-same-time-a"),
     );
+  });
+});
+
+describe("adaptive timeline density", () => {
+  it("keeps ordinary days comfortable", () => {
+    const profile = resolveTimelineDensity(
+      [60, 360, 720, 1_080].map((minuteOfDay) => ({ minuteOfDay })),
+      "realtime",
+      900,
+    );
+
+    expect(profile.level).toBe("comfortable");
+    expect(profile.previewHeight).toBeNull();
+  });
+
+  it("compresses a dense hour and limits lanes to the available width", () => {
+    const profile = resolveTimelineDensity(
+      Array.from({ length: 24 }, (_, index) => ({ minuteOfDay: 450 + index * 2 })),
+      "realtime",
+      720,
+    );
+
+    expect(profile.level).toBe("dense");
+    expect(profile.previewHeight).toBe(24);
+    expect(profile.peakHourEntries).toBe(24);
+    expect(profile.maximumRealtimeColumns).toBe(4);
+  });
+
+  it("falls back to one packed lane in a very narrow leaf", () => {
+    const profile = resolveTimelineDensity(
+      Array.from({ length: 12 }, (_, index) => ({ minuteOfDay: 480 + index })),
+      "realtime",
+      320,
+      84,
+    );
+
+    expect(profile.level).toBe("dense");
+    expect(profile.maximumRealtimeColumns).toBe(1);
   });
 });
 

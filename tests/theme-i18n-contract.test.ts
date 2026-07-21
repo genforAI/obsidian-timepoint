@@ -38,6 +38,9 @@ describe("theme and geometry contract", () => {
     expect(renderer).not.toMatch(/\.style\.(?:top|left|width|height|transform|minWidth)\s*=/u);
     expect(renderer).toContain('style.setProperty("--tp-card-y"');
     expect(renderer).toContain('style.setProperty("--tp-connector-angle"');
+    expect(renderer).toContain('"data-minute": String(positioned.minuteOfDay)');
+    expect(renderer).toContain('removeClass("is-create-target")');
+    expect(renderer).toContain("hideGhost();\n      createPending = true;");
   });
 
   it("contains the required responsive thresholds and touch target", () => {

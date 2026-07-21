@@ -40,7 +40,11 @@ function compareCandidatesByCardPosition(
  * considered from top to bottom, so tracking the last bottom in each column is
  * sufficient and produces stable, deterministic interval colouring.
  */
-function assignCollisionColumns(candidates: RealtimeCandidate[], cardGap: number): number {
+function assignCollisionColumns(
+  candidates: RealtimeCandidate[],
+  cardGap: number,
+  maximumColumns: number,
+): number {
   const lastBottomByColumn: number[] = [];
   const byCardPosition = [...candidates].sort(compareCandidatesByCardPosition);
 
@@ -52,6 +56,18 @@ function assignCollisionColumns(candidates: RealtimeCandidate[], cardGap: number
         break;
       }
       selectedColumn += 1;
+    }
+    if (selectedColumn >= maximumColumns) {
+      selectedColumn = 0;
+      for (let column = 1; column < lastBottomByColumn.length; column += 1) {
+        if ((lastBottomByColumn[column] ?? 0) < (lastBottomByColumn[selectedColumn] ?? 0)) {
+          selectedColumn = column;
+        }
+      }
+      candidate.cardY = Math.max(
+        candidate.cardY,
+        (lastBottomByColumn[selectedColumn] ?? candidate.cardY - cardGap) + cardGap,
+      );
     }
     candidate.column = selectedColumn;
     lastBottomByColumn[selectedColumn] = candidate.cardY + candidate.cardHeight;
@@ -74,12 +90,12 @@ export function calculateRealtimeTimelineLayout(
     (maximum, entry) => Math.max(maximum, entry.cardHeight),
     options.minimumCardHeight,
   );
-  const totalHeight = Math.max(
+  const baseHeight = Math.max(
     options.minimumHeight,
     options.topPadding + options.bottomPadding + maximumCardHeight,
   );
   const axisTop = options.topPadding;
-  const axisBottom = totalHeight - options.bottomPadding;
+  const axisBottom = baseHeight - options.bottomPadding;
   const timeScale = createLinearTimeScale(axisTop, axisBottom);
 
   const candidates: RealtimeCandidate[] = entries.map((entry, order) => {
@@ -94,7 +110,12 @@ export function calculateRealtimeTimelineLayout(
     };
   });
 
-  const columnCount = assignCollisionColumns(candidates, options.cardGap);
+  const columnCount = assignCollisionColumns(candidates, options.cardGap, options.maximumColumns);
+  const packedBottom = candidates.reduce(
+    (maximum, entry) => Math.max(maximum, entry.cardY + entry.cardHeight),
+    axisBottom,
+  );
+  const totalHeight = Math.max(baseHeight, packedBottom + options.bottomPadding);
   const laidOutEntries: LaidOutTimelineEntry[] = candidates.map((entry) => ({
     id: entry.id,
     minuteOfDay: entry.minuteOfDay,

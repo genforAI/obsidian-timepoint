@@ -27,6 +27,12 @@ export interface TimelineLayoutOptions {
   cardGap?: number;
   defaultEstimatedCardHeight?: number;
   minimumCardHeight?: number;
+  /**
+   * Maximum number of horizontal preview lanes used by Real-time mode.
+   * Extra colliding cards are packed downward in the least-busy lane while
+   * their time nodes remain exactly proportional to the day axis.
+   */
+  maximumColumns?: number;
 }
 
 export interface NormalizedTimelineLayoutOptions {
@@ -36,6 +42,7 @@ export interface NormalizedTimelineLayoutOptions {
   cardGap: number;
   defaultEstimatedCardHeight: number;
   minimumCardHeight: number;
+  maximumColumns: number;
 }
 
 export interface PreparedLayoutEntry {
@@ -100,6 +107,7 @@ const DEFAULT_OPTIONS: NormalizedTimelineLayoutOptions = {
   cardGap: 12,
   defaultEstimatedCardHeight: 88,
   minimumCardHeight: 32,
+  maximumColumns: Number.MAX_SAFE_INTEGER,
 };
 
 function finiteNonNegative(value: number | undefined, fallback: number, name: string): number {
@@ -116,6 +124,14 @@ function finitePositive(value: number | undefined, fallback: number, name: strin
     throw new RangeError(`${name} must be a finite positive number`);
   }
   return value;
+}
+
+function finitePositiveInteger(value: number | undefined, fallback: number, name: string): number {
+  const candidate = finitePositive(value, fallback, name);
+  if (!Number.isInteger(candidate)) {
+    throw new RangeError(`${name} must be a positive integer`);
+  }
+  return candidate;
 }
 
 export function normalizeTimelineLayoutOptions(
@@ -149,6 +165,11 @@ export function normalizeTimelineLayoutOptions(
       ),
     ),
     minimumCardHeight,
+    maximumColumns: finitePositiveInteger(
+      options.maximumColumns,
+      DEFAULT_OPTIONS.maximumColumns,
+      "maximumColumns",
+    ),
   };
 }
 

@@ -14,7 +14,7 @@ The public beta gate requires all of the following on Node.js 20 and 22:
 - bundle, manifest, dependency, and secret smoke checks;
 - high-severity dependency audit.
 
-The public implementation currently passes strict TypeScript and 123/123 tests across 12 files.
+The public implementation currently passes strict TypeScript and 135/135 tests across 14 files.
 Final build, lint, smoke, audit, and clean-install results are recorded during the release handoff,
 not predeclared in this document.
 
@@ -22,6 +22,10 @@ Automated coverage includes appearance migration, bilingual dictionary parity, r
 CSS contracts, legacy storage safety, native editor targeting, bounded previews, date-range and
 leap-day boundaries, range format round trips, portable folder structure, duplicate IDs, preview
 fingerprints, and partial-write rollback.
+
+Density stress coverage additionally includes a 39-entry clustered day, 96 entries at the same
+minute in a 320 px leaf, 180 shuffled dense entries, bounded Real-time lanes, collision-free packed
+cards, unchanged proportional nodes, and runtime-only preview caps.
 
 ## Runtime gate
 

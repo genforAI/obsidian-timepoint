@@ -17,6 +17,7 @@ import {
 import {
   buildStableBlockReference,
   clampTimelineScrollTop,
+  resolveInitialTimelineScrollTop,
   resolveCardDisplay,
   resolveTimelineCardMeasuredHeight,
   timelineMeasurementIsUsable,
@@ -28,6 +29,7 @@ import {
   isWithinTimelineAxisHitArea,
   mapTimelineYToStoredTime,
 } from "./timelineInteraction";
+import { resolveTimelineDensity, type TimelineDensityProfile } from "./timelineDensity";
 
 export interface TimelineRendererCallbacks {
   /** Defaults to true. False keeps review actions but suppresses all mutations. */
@@ -36,8 +38,8 @@ export interface TimelineRendererCallbacks {
   blockReferencePath?: string;
   /** Resolve the real note behind each card in entry-file storage. */
   getEntrySourcePath?: (entry: TimePointEntry) => string;
-  onCreateAtTime: (time: string) => void;
-  onCreateNow: () => void;
+  onCreateAtTime: (time: string) => void | Promise<void>;
+  onCreateNow: () => void | Promise<void>;
   onEditEntry: (entry: TimePointEntry) => void;
   onOpenSource: (entry: TimePointEntry) => void;
   onOpenExport?: () => void;
@@ -90,7 +92,9 @@ export class TimelineRenderer extends Component {
     callbacks: TimelineRendererCallbacks,
   ): Promise<void> {
     const preserveScroll = Boolean(
-      this.snapshot?.container === container && this.snapshot.sourcePath === sourcePath,
+      this.snapshot?.container === container &&
+      this.snapshot.sourcePath === sourcePath &&
+      this.snapshot.mode === mode,
     );
     this.snapshot = { container, entries, mode, sourcePath, settings, callbacks };
     this.automaticReflowsRemaining = 3;
@@ -102,6 +106,7 @@ export class TimelineRenderer extends Component {
     if (!snapshot) return;
     const scrollContainer = findTimelineScrollContainer(snapshot.container);
     const previousScrollTop = preserveScroll ? scrollContainer?.scrollTop : undefined;
+    const previousScrollLeft = preserveScroll ? scrollContainer?.scrollLeft : undefined;
     const token = ++this.renderToken;
     this.cleanupRenderState(false);
     const { container, entries, mode, sourcePath, settings, callbacks } = snapshot;
@@ -116,6 +121,14 @@ export class TimelineRenderer extends Component {
         "aria-label": `${mode === "elastic" ? "Elastic" : "Real-time"} daily timeline.${editable ? " Click near the day axis to add an event." : " Read-only."}`,
       },
     });
+    const density = resolveTimelineDensity(
+      entries,
+      mode,
+      container.clientWidth,
+      parseCssPixels(timeline, "--tp-card-start", 124),
+    );
+    timeline.addClass(`is-density-${density.level}`);
+    timeline.setAttr("data-density", density.level);
     const cardLayer = timeline.createDiv({ cls: "timepoint-card-layer" });
     const cards = new Map<string, HTMLElement>();
     const cardStates = new Map<string, CardRuntimeState>();
@@ -213,7 +226,7 @@ export class TimelineRenderer extends Component {
         display: { clipped: false, maxHeight: null },
       };
       cardStates.set(entry.id, state);
-      this.refreshCardDisplay(state, settings);
+      this.refreshCardDisplay(state, settings, density);
       moreButton.addEventListener("click", (event) => {
         event.stopPropagation();
         this.showCardActions(event, entry, entrySourcePath, callbacks, settings.appearanceMode);
@@ -224,18 +237,23 @@ export class TimelineRenderer extends Component {
     await nextFrame();
     if (token !== this.renderToken) return;
 
-    let layout = this.calculateLayout(entries, cards, mode, settings);
+    let layout = this.calculateLayout(entries, cards, mode, settings, density);
     // Real-time lane widths can change natural Markdown height and therefore a
     // smart/preview decision. Two bounded measurement passes converge both.
     for (let pass = 0; pass < 2; pass += 1) {
-      this.applyRealtimeColumns(timeline, cardLayer, cards, layout);
+      this.applyRealtimeColumns(timeline, cardLayer, cards, layout, density);
       await nextFrame();
       if (token !== this.renderToken) return;
-      for (const state of cardStates.values()) this.refreshCardDisplay(state, settings);
-      layout = this.calculateLayout(entries, cards, mode, settings);
+      for (const state of cardStates.values()) this.refreshCardDisplay(state, settings, density);
+      layout = this.calculateLayout(entries, cards, mode, settings, density);
     }
-    this.applyRealtimeColumns(timeline, cardLayer, cards, layout);
+    this.applyRealtimeColumns(timeline, cardLayer, cards, layout, density);
     timeline.style.setProperty("--tp-timeline-height", `${Math.ceil(layout.totalHeight)}px`);
+    timeline.style.setProperty("--tp-axis-top-y", `${layout.axisTop}px`);
+    timeline.style.setProperty(
+      "--tp-axis-height",
+      `${Math.max(1, layout.axisBottom - layout.axisTop)}px`,
+    );
 
     this.renderAxisLabels(timeline, layout, settings);
     this.positionCardsAndNodes(timeline, cardLayer, cards, entryById, layout, settings, callbacks);
@@ -244,12 +262,38 @@ export class TimelineRenderer extends Component {
 
     if (editable) this.installAxisInteraction(timeline, layout, settings, callbacks);
 
-    if (scrollContainer && previousScrollTop !== undefined) {
-      scrollContainer.scrollTop = clampTimelineScrollTop(
-        previousScrollTop,
-        scrollContainer.scrollHeight,
-        scrollContainer.clientHeight,
-      );
+    await nextFrame();
+    if (token !== this.renderToken) return;
+    if (scrollContainer) {
+      const targetScrollTop =
+        previousScrollTop === undefined
+          ? resolveInitialTimelineScrollTop(
+              mode,
+              layout.entries[0]?.nodeY,
+              scrollContainer.scrollHeight,
+              scrollContainer.clientHeight,
+            )
+          : clampTimelineScrollTop(
+              previousScrollTop,
+              scrollContainer.scrollHeight,
+              scrollContainer.clientHeight,
+            );
+      const targetScrollLeft =
+        previousScrollLeft === undefined
+          ? 0
+          : clampTimelineScrollTop(
+              previousScrollLeft,
+              scrollContainer.scrollWidth,
+              scrollContainer.clientWidth,
+            );
+      scrollContainer.scrollTop = targetScrollTop;
+      scrollContainer.scrollLeft = targetScrollLeft;
+      // Reapply after the first painted frame. Obsidian can restore a stale
+      // scroll anchor while a mode switch replaces a much wider card layer.
+      await nextFrame();
+      if (token !== this.renderToken) return;
+      scrollContainer.scrollTop = targetScrollTop;
+      scrollContainer.scrollLeft = targetScrollLeft;
     }
     this.installResizeObserver(container, cards, layout, token);
   }
@@ -259,6 +303,7 @@ export class TimelineRenderer extends Component {
     cards: ReadonlyMap<string, HTMLElement>,
     mode: TimelineMode,
     settings: TimePointSettings,
+    density: TimelineDensityProfile,
   ): TimelineLayoutResult {
     return calculateTimelineLayout(
       mode,
@@ -272,8 +317,9 @@ export class TimelineRenderer extends Component {
         minimumHeight: mode === "elastic" ? settings.timelineBaseHeight : settings.realtimeHeight,
         topPadding: 36,
         bottomPadding: 44,
-        cardGap: settings.minimumCardGap,
+        cardGap: Math.min(settings.minimumCardGap, density.layoutCardGap),
         defaultEstimatedCardHeight: 96,
+        maximumColumns: mode === "realtime" ? density.maximumRealtimeColumns : undefined,
       },
     );
   }
@@ -330,6 +376,7 @@ export class TimelineRenderer extends Component {
           cls: `timepoint-node${entry.date === currentDate && entry.time === currentTime ? " is-current" : ""}`,
           attr: {
             type: "button",
+            "data-minute": String(positioned.minuteOfDay),
             "aria-label": `${entriesAtMinute.length} TimePoint${entriesAtMinute.length === 1 ? "" : "s"} at ${entry.time}`,
           },
         });
@@ -410,7 +457,11 @@ export class TimelineRenderer extends Component {
     setIcon(button.createSpan({ prepend: true }), "plus");
     button.addEventListener("click", (event) => {
       event.stopPropagation();
-      callbacks.onCreateNow();
+      void Promise.resolve()
+        .then(() => callbacks.onCreateNow())
+        .catch((error: unknown) => {
+          new Notice(error instanceof Error ? error.message : t("notice.createFailure"));
+        });
     });
     if (callbacks.onLearn) {
       const learn = actions.createEl("button", {
@@ -439,6 +490,7 @@ export class TimelineRenderer extends Component {
     cardLayer: HTMLElement,
     cards: ReadonlyMap<string, HTMLElement>,
     layout: TimelineLayoutResult,
+    density: TimelineDensityProfile,
   ): void {
     if (layout.mode !== "realtime") {
       timeline.style.removeProperty("--tp-timeline-min-width");
@@ -450,10 +502,13 @@ export class TimelineRenderer extends Component {
     }
 
     const columnCount = Math.max(1, layout.columnCount);
-    const gap = 10;
+    const gap = density.realtimeColumnGap;
     const cardStart = cardLayer.offsetLeft || parseCssPixels(timeline, "--tp-card-start", 124);
     const viewportWidth = timeline.parentElement?.clientWidth ?? timeline.clientWidth;
-    const minimumColumnWidth = columnCount > 1 ? 220 : 180;
+    const minimumColumnWidth =
+      columnCount > 1
+        ? density.minimumRealtimeColumnWidth
+        : Math.min(180, density.minimumRealtimeColumnWidth);
     const requiredWidth =
       cardStart + columnCount * minimumColumnWidth + (columnCount - 1) * gap + 16;
     if (requiredWidth > viewportWidth) {
@@ -596,12 +651,17 @@ export class TimelineRenderer extends Component {
     overflowHint.hidden = !display.clipped;
   }
 
-  private refreshCardDisplay(state: CardRuntimeState, settings: TimePointSettings): void {
+  private refreshCardDisplay(
+    state: CardRuntimeState,
+    settings: TimePointSettings,
+    density: TimelineDensityProfile,
+  ): void {
     state.display = resolveCardDisplay({
       mode: settings.cardDisplayMode,
       naturalHeight: state.markdown.scrollHeight,
       smartCollapseHeight: settings.smartCollapseHeight,
       previewHeight: settings.cardPreviewHeight,
+      densityLimit: density.previewHeight,
     });
     this.applyCardDisplay(state.card, state.markdown, state.overflowHint, state.display);
   }
@@ -702,10 +762,18 @@ export class TimelineRenderer extends Component {
     const ghostLabel = timeline.createDiv({ cls: "timepoint-ghost-time" });
     ghostNode.hidden = true;
     ghostLabel.hidden = true;
+    let highlightedNode: HTMLElement | null = null;
+    let createPending = false;
+
+    const clearHighlightedNode = (): void => {
+      highlightedNode?.removeClass("is-create-target");
+      highlightedNode = null;
+    };
 
     const hideGhost = (): void => {
       ghostNode.hidden = true;
       ghostLabel.hidden = true;
+      clearHighlightedNode();
       timeline.removeClass("is-axis-hot");
     };
 
@@ -738,6 +806,17 @@ export class TimelineRenderer extends Component {
         return;
       }
       const snappedY = layout.timeScale.minuteToY(pointerTime.minuteOfDay);
+      clearHighlightedNode();
+      highlightedNode = timeline.querySelector<HTMLElement>(
+        `.timepoint-node[data-minute="${pointerTime.minuteOfDay}"]`,
+      );
+      if (highlightedNode) {
+        ghostNode.hidden = true;
+        ghostLabel.hidden = true;
+        highlightedNode.addClass("is-create-target");
+        timeline.addClass("is-axis-hot");
+        return;
+      }
       ghostNode.style.setProperty("--tp-y", `${snappedY}px`);
       ghostLabel.style.setProperty("--tp-y", `${snappedY}px`);
       ghostLabel.setText(formatDisplayTime(pointerTime.time, settings.timeFormat));
@@ -747,10 +826,20 @@ export class TimelineRenderer extends Component {
     });
     timeline.addEventListener("pointerleave", hideGhost);
     timeline.addEventListener("click", (event) => {
+      if (createPending) return;
       const pointerTime = mapPointer(event);
       if (!pointerTime) return;
       event.preventDefault();
-      callbacks.onCreateAtTime(pointerTime.time);
+      hideGhost();
+      createPending = true;
+      void Promise.resolve()
+        .then(() => callbacks.onCreateAtTime(pointerTime.time))
+        .catch((error: unknown) => {
+          new Notice(error instanceof Error ? error.message : t("notice.createFailure"));
+        })
+        .finally(() => {
+          createPending = false;
+        });
     });
   }
 

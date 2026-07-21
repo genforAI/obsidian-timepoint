@@ -320,18 +320,13 @@
   cursor: crosshair;
 }
 
-.timepoint-timeline.is-axis-hot::before {
-  background: var(--tp-accent);
-  box-shadow: 0 0 0 4px var(--tp-accent-soft);
-}
-
 .timepoint-timeline::before {
   position: absolute;
   z-index: 0;
-  top: 28px;
-  bottom: 28px;
+  top: var(--tp-axis-top-y, 28px);
   left: var(--tp-axis-x);
   width: 2px;
+  height: var(--tp-axis-height, calc(100% - 56px));
   border-radius: 999px;
   background: var(--background-modifier-border-hover);
   content: "";
@@ -406,7 +401,8 @@
 }
 
 .timepoint-node:hover,
-.timepoint-node:focus-visible {
+.timepoint-node:focus-visible,
+.timepoint-node.is-create-target {
   background: var(--tp-accent);
   box-shadow: 0 0 0 3px var(--tp-accent-soft);
   transform: translateY(-50%) scale(1.18);
@@ -464,6 +460,60 @@
   cursor: default;
   user-select: text;
   pointer-events: auto;
+}
+
+/* Density is a runtime-only presentation decision. The complete Markdown DOM
+   remains available to the native editor; only its timeline preview is capped. */
+.timepoint-timeline.is-density-compact .timepoint-card {
+  padding: 8px 10px 9px;
+  border-radius: 10px;
+}
+
+.timepoint-timeline.is-density-compact .timepoint-card-header {
+  margin-bottom: 3px;
+}
+
+.timepoint-timeline.is-density-dense .timepoint-card {
+  padding: 6px 8px 7px;
+  border-radius: 9px;
+}
+
+.timepoint-timeline.is-density-dense .timepoint-card-header {
+  gap: 5px;
+  margin-bottom: 1px;
+}
+
+.timepoint-timeline.is-density-dense .timepoint-card-time {
+  gap: 4px;
+  font-size: var(--font-ui-smaller);
+}
+
+.timepoint-timeline.is-density-dense .timepoint-markdown {
+  font-size: var(--font-ui-smaller);
+  line-height: 1.3;
+}
+
+.timepoint-timeline.is-density-dense .timepoint-card-action-edit {
+  display: none;
+}
+
+.timepoint-timeline.is-density-dense .timepoint-card-overflow {
+  display: none;
+}
+
+.timepoint-timeline.is-density-dense .timepoint-card.is-clipped .timepoint-markdown::after {
+  height: 16px;
+}
+
+.timepoint-timeline.is-density-dense .timepoint-markdown img {
+  max-height: 24px;
+  object-fit: cover;
+  object-position: top;
+}
+
+.timepoint-timeline.is-density-dense .timepoint-markdown pre,
+.timepoint-timeline.is-density-dense .timepoint-markdown .table-wrapper {
+  overflow: hidden;
 }
 
 .timepoint-card:hover,

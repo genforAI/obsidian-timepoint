@@ -219,7 +219,7 @@ export default class TimePointPlugin extends Plugin {
           new Notice("Kept the unsaved timeline draft; current-time creation was cancelled.");
           return;
         }
-        view.openAddEditor();
+        await view.openAddEditor();
       },
     });
     this.addCommand({
@@ -227,7 +227,7 @@ export default class TimePointPlugin extends Plugin {
       name: t("command.addOpenDay"),
       callback: async () => {
         const view = await this.activateTimePoint();
-        view.openAddEditor();
+        await view.openAddEditor();
       },
     });
     this.addCommand({

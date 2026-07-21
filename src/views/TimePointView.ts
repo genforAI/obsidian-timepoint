@@ -38,6 +38,7 @@ export class TimePointView extends ItemView {
   private editingEntryId: string | null = null;
   private currentDay: ParsedDayFile | null = null;
   private timelineRenderer: TimelineRenderer;
+  private createEntryPromise: Promise<void> | null = null;
   private loadToken = 0;
   private opened = false;
 
@@ -151,8 +152,14 @@ export class TimePointView extends ItemView {
     }
   }
 
-  openAddEditor(clickedTime?: string): void {
-    void this.createAndOpenEntry(clickedTime ?? this.timePoint.getCurrentTime());
+  openAddEditor(clickedTime?: string): Promise<void> {
+    if (this.createEntryPromise) return this.createEntryPromise;
+    const operation = this.createAndOpenEntry(clickedTime ?? this.timePoint.getCurrentTime());
+    const guardedOperation = operation.finally(() => {
+      if (this.createEntryPromise === guardedOperation) this.createEntryPromise = null;
+    });
+    this.createEntryPromise = guardedOperation;
+    return guardedOperation;
   }
 
   /** Stable hook used by cards and editable embedded `timepoint` blocks. */
@@ -208,7 +215,7 @@ export class TimePointView extends ItemView {
     setIcon(add.createSpan(), "plus");
     add.createSpan({ cls: "timepoint-button-label", text: t("view.add") });
     add.setAttr("aria-label", t("view.addAria"));
-    add.addEventListener("click", () => this.openAddEditor());
+    add.addEventListener("click", () => void this.openAddEditor());
 
     const exportButton = actions.createEl("button", {
       cls: "timepoint-button timepoint-export-button",

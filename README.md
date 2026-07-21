@@ -150,6 +150,10 @@ minified production build, bundle smoke evaluation, and a high-severity dependen
 the same gates on Node 20 and 22. `main.js` is intentionally ignored by Git and is attached only to
 GitHub Releases.
 
+The [density and interaction stress matrix](docs/STRESS_TESTS.md) covers clustered and same-minute
+records, narrow leaves, deterministic packing, preview clipping, mode switches, and the remaining
+real-Obsidian checks.
+
 ## Known limitations
 
 - This beta is marked desktop-only. macOS is the first runtime gate; Windows is required before the

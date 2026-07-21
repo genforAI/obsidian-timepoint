@@ -106,23 +106,21 @@ export class EmbeddedTimePointBlock extends MarkdownRenderChild {
         {
           editable: this.config.editable,
           getEntrySourcePath: (entry) => this.repository.getEntrySourcePath(entry),
-          onCreateAtTime: (time) => {
-            if (this.config.editable) {
-              this.runAction(() => this.callbacks.onCreateAtTime(this.config.date, time));
-            }
-          },
-          onCreateNow: () => {
-            if (this.config.editable) {
-              this.runAction(() => this.callbacks.onCreateNow(this.config.date));
-            }
-          },
+          onCreateAtTime: (time) =>
+            this.config.editable
+              ? this.runAction(() => this.callbacks.onCreateAtTime(this.config.date, time))
+              : undefined,
+          onCreateNow: () =>
+            this.config.editable
+              ? this.runAction(() => this.callbacks.onCreateNow(this.config.date))
+              : undefined,
           onEditEntry: (entry) => {
             if (this.config.editable) {
-              this.runAction(() => this.callbacks.onEditEntry(this.config.date, entry));
+              void this.runAction(() => this.callbacks.onEditEntry(this.config.date, entry));
             }
           },
           onOpenSource: (entry) => {
-            this.runAction(() => this.callbacks.onOpenSource(this.config.date, entry));
+            void this.runAction(() => this.callbacks.onOpenSource(this.config.date, entry));
           },
         },
       );
@@ -182,8 +180,8 @@ export class EmbeddedTimePointBlock extends MarkdownRenderChild {
     }, 120);
   }
 
-  private runAction(action: () => void | Promise<void>): void {
-    Promise.resolve()
+  private runAction(action: () => void | Promise<void>): Promise<void> {
+    return Promise.resolve()
       .then(action)
       .catch((error: unknown) => {
         this.statusEl.show();
