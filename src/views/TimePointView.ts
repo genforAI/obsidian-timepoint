@@ -20,6 +20,14 @@ import type { TimelineMode } from "../settings/settings";
 import { getLocalTimezone, isValidDateString, shiftDate, todayDateString } from "../utils/time";
 import { TimelineRenderer } from "./TimelineRenderer";
 import { locateNativeEditorTarget } from "./nativeEditorTarget";
+import {
+  MAX_TIMELINE_ZOOM,
+  MIN_TIMELINE_ZOOM,
+  normalizeTimelineZoom,
+  resolveZoomedScrollTop,
+  stepTimelineZoom,
+  type TimelineInteractionMode,
+} from "./timelineNavigation";
 
 export const TIMEPOINT_VIEW_TYPE = "timepoint-view";
 
@@ -39,6 +47,12 @@ export class TimePointView extends ItemView {
   private currentDay: ParsedDayFile | null = null;
   private timelineRenderer: TimelineRenderer;
   private createEntryPromise: Promise<void> | null = null;
+  private interactionMode: TimelineInteractionMode = "select";
+  private timelineZoom = 1;
+  private panButton: HTMLButtonElement | null = null;
+  private zoomOutButton: HTMLButtonElement | null = null;
+  private zoomResetButton: HTMLButtonElement | null = null;
+  private zoomInButton: HTMLButtonElement | null = null;
   private loadToken = 0;
   private opened = false;
 
@@ -140,6 +154,8 @@ export class TimePointView extends ItemView {
           onLearn: () => new Notice(t("view.learnNotice"), 7_000),
           onDeleteEntry: (entry) => this.deleteEntry(entry),
           getEntrySourcePath: (entry) => this.timePoint.repository.getEntrySourcePath(entry),
+          interactionMode: this.interactionMode,
+          timelineScale: this.timelineZoom,
         },
       );
       this.syncEditingCardHighlight();
@@ -211,6 +227,29 @@ export class TimePointView extends ItemView {
       void this.refresh();
     });
 
+    const navigation = actions.createDiv({ cls: "timepoint-navigation-tools" });
+    this.panButton = this.iconButton(navigation, "hand", t("view.pan"));
+    this.panButton.addClass("timepoint-pan-button");
+    this.panButton.addEventListener("click", () => void this.toggleInteractionMode());
+
+    const zoomControls = navigation.createDiv({ cls: "timepoint-zoom-controls" });
+    this.zoomOutButton = this.iconButton(zoomControls, "zoom-out", t("view.zoomOut"));
+    this.zoomOutButton.addEventListener(
+      "click",
+      () => void this.setTimelineZoom(stepTimelineZoom(this.timelineZoom, -1)),
+    );
+    this.zoomResetButton = zoomControls.createEl("button", {
+      cls: "timepoint-icon-button timepoint-zoom-reset",
+      attr: { type: "button", "aria-label": t("view.zoomReset") },
+    });
+    this.zoomResetButton.addEventListener("click", () => void this.setTimelineZoom(1));
+    this.zoomInButton = this.iconButton(zoomControls, "zoom-in", t("view.zoomIn"));
+    this.zoomInButton.addEventListener(
+      "click",
+      () => void this.setTimelineZoom(stepTimelineZoom(this.timelineZoom, 1)),
+    );
+    this.updateNavigationControls();
+
     const add = actions.createEl("button", { cls: "timepoint-button is-accent" });
     setIcon(add.createSpan(), "plus");
     add.createSpan({ cls: "timepoint-button-label", text: t("view.add") });
@@ -241,6 +280,44 @@ export class TimePointView extends ItemView {
     });
     setIcon(button, icon);
     return button;
+  }
+
+  private async toggleInteractionMode(): Promise<void> {
+    this.interactionMode = this.interactionMode === "pan" ? "select" : "pan";
+    this.updateNavigationControls();
+    await this.refresh();
+  }
+
+  private async setTimelineZoom(nextZoom: number): Promise<void> {
+    const normalized = normalizeTimelineZoom(nextZoom);
+    if (normalized === this.timelineZoom) return;
+    const previousScrollTop = this.scrollEl.scrollTop;
+    const previousScrollHeight = this.scrollEl.scrollHeight;
+    const previousClientHeight = this.scrollEl.clientHeight;
+    this.timelineZoom = normalized;
+    this.updateNavigationControls();
+    await this.refresh();
+    await nextFrame();
+    this.scrollEl.scrollTop = resolveZoomedScrollTop(
+      previousScrollTop,
+      previousScrollHeight,
+      previousClientHeight,
+      this.scrollEl.scrollHeight,
+      this.scrollEl.clientHeight,
+    );
+  }
+
+  private updateNavigationControls(): void {
+    const panActive = this.interactionMode === "pan";
+    this.panButton?.toggleClass("is-active", panActive);
+    this.panButton?.setAttr("aria-pressed", String(panActive));
+    this.panButton?.setAttr("aria-label", t(panActive ? "view.panActive" : "view.pan"));
+    if (this.zoomResetButton) {
+      this.zoomResetButton.setText(`${Math.round(this.timelineZoom * 100)}%`);
+      this.zoomResetButton.setAttr("title", t("view.zoomReset"));
+    }
+    if (this.zoomOutButton) this.zoomOutButton.disabled = this.timelineZoom <= MIN_TIMELINE_ZOOM;
+    if (this.zoomInButton) this.zoomInButton.disabled = this.timelineZoom >= MAX_TIMELINE_ZOOM;
   }
 
   private updateDateHeader(): void {
@@ -555,6 +632,35 @@ export class TimePointView extends ItemView {
 
   private showActionsMenu(event: MouseEvent): void {
     const menu = new Menu();
+    menu.addItem((item) =>
+      item
+        .setTitle(t(this.interactionMode === "pan" ? "view.panActive" : "view.pan"))
+        .setIcon("hand")
+        .setChecked(this.interactionMode === "pan")
+        .onClick(() => void this.toggleInteractionMode()),
+    );
+    menu.addItem((item) =>
+      item
+        .setTitle(t("view.zoomOut"))
+        .setIcon("zoom-out")
+        .setDisabled(this.timelineZoom <= MIN_TIMELINE_ZOOM)
+        .onClick(() => void this.setTimelineZoom(stepTimelineZoom(this.timelineZoom, -1))),
+    );
+    menu.addItem((item) =>
+      item
+        .setTitle(`${t("view.zoomReset")} (${Math.round(this.timelineZoom * 100)}%)`)
+        .setIcon("rotate-ccw")
+        .setDisabled(this.timelineZoom === 1)
+        .onClick(() => void this.setTimelineZoom(1)),
+    );
+    menu.addItem((item) =>
+      item
+        .setTitle(t("view.zoomIn"))
+        .setIcon("zoom-in")
+        .setDisabled(this.timelineZoom >= MAX_TIMELINE_ZOOM)
+        .onClick(() => void this.setTimelineZoom(stepTimelineZoom(this.timelineZoom, 1))),
+    );
+    menu.addSeparator();
     if (this.currentDay?.storageLayout === "entry-files") {
       menu.addItem((item) =>
         item

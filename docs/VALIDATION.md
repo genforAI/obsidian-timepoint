@@ -14,7 +14,7 @@ The public beta gate requires all of the following on Node.js 20 and 22:
 - bundle, manifest, dependency, and secret smoke checks;
 - high-severity dependency audit.
 
-The public implementation currently passes strict TypeScript and 135/135 tests across 14 files.
+The public implementation currently passes strict TypeScript and 139/139 tests across 14 files.
 Final build, lint, smoke, audit, and clean-install results are recorded during the release handoff,
 not predeclared in this document.
 

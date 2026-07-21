@@ -41,6 +41,10 @@ describe("theme and geometry contract", () => {
     expect(renderer).toContain('"data-minute": String(positioned.minuteOfDay)');
     expect(renderer).toContain('removeClass("is-create-target")');
     expect(renderer).toContain("hideGhost();\n      createPending = true;");
+    expect(renderer).toContain("installPanInteraction(timeline, scrollContainer)");
+    expect(renderer).toContain("timeline.setPointerCapture(event.pointerId)");
+    expect(css).toContain(".timepoint-node.is-badge-suppressed::after");
+    expect(css).toContain(".timepoint-timeline.is-pan-mode.is-panning");
   });
 
   it("contains the required responsive thresholds and touch target", () => {

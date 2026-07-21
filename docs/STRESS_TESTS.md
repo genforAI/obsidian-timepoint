@@ -16,6 +16,8 @@ to make a timeline fit: density changes are runtime-only preview decisions.
 | Existing-minute axis hover                 | Existing node is highlighted; no duplicate ghost label                            | Pass by source contract |
 | Rapid repeated creation                    | One create promise per view; later clicks wait for completion                     | Pass by source contract |
 | Fresh/mode-switched Real-time view         | Reset horizontal anchor and settle vertical position after paint                  | Pass by source contract |
+| Dense proportional badges                  | Permanent labels are thinned; every node retains its exact accessible time        | Pass                    |
+| Hand mode and 50–300% zoom                 | Drag suppresses card/create actions; viewport centre survives runtime zoom        | Pass                    |
 
 The automated gate is `npm run check`. It covers formatting, ESLint, strict TypeScript, Vitest,
 production build, bundle evaluation/secret scan, and high-severity dependency audit.
@@ -35,11 +37,13 @@ consent.
    the earliest event rather than an empty canvas.
 6. Resize across each container breakpoint and confirm lane count is recalculated without overlap,
    clipped controls, or a stale horizontal blank region.
-7. Repeat in default light/dark, Minimal, AnuPpuccin, and a high-contrast custom accent.
-8. Verify the same fixture in an embedded `_Timeline.md` Reading View block.
-9. Edit, externally modify, rename, delete/undo, and reload a dense entry; confirm IDs and Markdown
-   remain authoritative.
-10. Preview and round-trip Markdown, JSON, CSV, and Portable notes folder exports from the dense
+7. Enable the Hand tool, zoom from 50% through 300%, drag vertically and horizontally, reset to
+   100%, then exit Hand mode; confirm no event opens, moves, or gets created during navigation.
+8. Repeat in default light/dark, Minimal, AnuPpuccin, and a high-contrast custom accent.
+9. Verify the same fixture in an embedded `_Timeline.md` Reading View block.
+10. Edit, externally modify, rename, delete/undo, and reload a dense entry; confirm IDs and Markdown
+    remain authoritative.
+11. Preview and round-trip Markdown, JSON, CSV, and Portable notes folder exports from the dense
     date and an inclusive date range.
 
 Record failures with the exact runtime-file hashes, Obsidian version, OS, theme, width, zoom,

@@ -15,7 +15,16 @@ import {
   isWithinTimelineAxisHitArea,
   mapTimelineYToStoredTime,
 } from "../src/views/timelineInteraction";
-import { resolveTimelineDensity } from "../src/views/timelineDensity";
+import {
+  resolveRealtimeLaneGeometry,
+  resolveTimelineDensity,
+  selectVisibleTimelineBadgeMinutes,
+} from "../src/views/timelineDensity";
+import {
+  normalizeTimelineZoom,
+  resolveZoomedScrollTop,
+  stepTimelineZoom,
+} from "../src/views/timelineNavigation";
 
 describe("smart card display", () => {
   it("shows short smart notes fully and collapses long smart notes", () => {
@@ -172,6 +181,54 @@ describe("adaptive timeline density", () => {
 
     expect(profile.level).toBe("dense");
     expect(profile.maximumRealtimeColumns).toBe(1);
+  });
+
+  it("keeps default dense lanes fitted but makes zoomed lanes pannable", () => {
+    const profile = resolveTimelineDensity(
+      Array.from({ length: 24 }, (_, index) => ({ minuteOfDay: 450 + index * 2 })),
+      "realtime",
+      720,
+    );
+    const defaultGeometry = resolveRealtimeLaneGeometry(profile, 4, 124, 1);
+    const zoomedGeometry = resolveRealtimeLaneGeometry(profile, 4, 124, 2);
+
+    expect(defaultGeometry.requiredWidth).toBeLessThanOrEqual(720);
+    expect(zoomedGeometry.requiredWidth).toBeGreaterThan(720);
+    expect(zoomedGeometry.minimumColumnWidth).toBe(defaultGeometry.minimumColumnWidth * 2);
+  });
+
+  it("thins permanent dense badges while keeping every precise time available on its node", () => {
+    const visible = selectVisibleTimelineBadgeMinutes(
+      [
+        { minuteOfDay: 450, nodeY: 100 },
+        { minuteOfDay: 455, nodeY: 104 },
+        { minuteOfDay: 465, nodeY: 112 },
+        { minuteOfDay: 480, nodeY: 132 },
+        { minuteOfDay: 480, nodeY: 132 },
+      ],
+      20,
+    );
+
+    expect([...visible]).toEqual([450, 480]);
+    expect([...selectVisibleTimelineBadgeMinutes([{ minuteOfDay: 455, nodeY: 104 }], 0)]).toEqual([
+      455,
+    ]);
+  });
+});
+
+describe("timeline pan and zoom", () => {
+  it("clamps and steps the runtime zoom without persisting it", () => {
+    expect(normalizeTimelineZoom(Number.NaN)).toBe(1);
+    expect(normalizeTimelineZoom(0.1)).toBe(0.5);
+    expect(normalizeTimelineZoom(4)).toBe(3);
+    expect(stepTimelineZoom(1, 1)).toBe(1.25);
+    expect(stepTimelineZoom(0.5, -1)).toBe(0.5);
+  });
+
+  it("keeps the relative viewport centre stable after zoom", () => {
+    expect(resolveZoomedScrollTop(600, 2_000, 800, 4_000, 800)).toBe(1_600);
+    expect(resolveZoomedScrollTop(0, 600, 800, 1_200, 800)).toBe(0);
+    expect(resolveZoomedScrollTop(900, 1_200, 300, 600, 300)).toBe(300);
   });
 });
 

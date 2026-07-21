@@ -101,6 +101,43 @@
   gap: 8px;
 }
 
+.timepoint-navigation-tools,
+.timepoint-zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.timepoint-navigation-tools {
+  padding: 3px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: calc(var(--button-radius, 8px) + 2px);
+  background: var(--background-primary);
+}
+
+.timepoint-navigation-tools .timepoint-icon-button {
+  min-height: 34px;
+  height: 34px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.timepoint-zoom-reset {
+  width: auto;
+  min-width: 52px;
+  padding-inline: 7px;
+  border-color: transparent;
+  background: transparent;
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+}
+
+.timepoint-pan-button.is-active {
+  border-color: var(--tp-accent-border);
+  color: var(--text-accent);
+  background: var(--tp-accent-soft);
+}
+
 .timepoint-date-copy {
   min-width: 10rem;
   margin-inline: 4px 8px;
@@ -320,6 +357,27 @@
   cursor: crosshair;
 }
 
+.timepoint-timeline.is-pan-mode,
+.timepoint-timeline.is-pan-mode .timepoint-card,
+.timepoint-timeline.is-pan-mode .timepoint-node,
+.timepoint-timeline.is-pan-mode a,
+.timepoint-timeline.is-pan-mode button {
+  cursor: grab;
+  user-select: none;
+}
+
+.timepoint-timeline.is-pan-mode {
+  touch-action: none;
+}
+
+.timepoint-timeline.is-pan-mode.is-panning,
+.timepoint-timeline.is-pan-mode.is-panning .timepoint-card,
+.timepoint-timeline.is-pan-mode.is-panning .timepoint-node,
+.timepoint-timeline.is-pan-mode.is-panning a,
+.timepoint-timeline.is-pan-mode.is-panning button {
+  cursor: grabbing;
+}
+
 .timepoint-timeline::before {
   position: absolute;
   z-index: 0;
@@ -420,6 +478,33 @@
 .timepoint-node.is-current {
   background: var(--tp-accent);
   animation: timepoint-pulse 2.2s ease-in-out infinite;
+}
+
+.timepoint-node.is-badge-suppressed::after {
+  position: absolute;
+  z-index: 14;
+  top: 50%;
+  right: calc(100% + 9px);
+  display: none;
+  padding: 3px 7px;
+  border: 1px solid var(--tp-accent-border);
+  border-radius: 7px;
+  color: var(--text-normal);
+  background: var(--background-secondary);
+  box-shadow: var(--shadow-s);
+  content: attr(data-time-label);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-medium);
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.timepoint-node.is-badge-suppressed:hover::after,
+.timepoint-node.is-badge-suppressed:focus-visible::after,
+.timepoint-node.is-badge-suppressed.is-create-target::after {
+  display: block;
 }
 
 .timepoint-connector {
@@ -1064,6 +1149,10 @@
     flex: 1;
   }
 
+  .timepoint-zoom-controls {
+    display: none;
+  }
+
   .timepoint-view-status {
     flex-direction: column;
   }
@@ -1173,6 +1262,11 @@
     width: 44px;
     height: 44px;
   }
+
+  .timepoint-navigation-tools .timepoint-icon-button {
+    min-height: 44px;
+    height: 44px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1229,6 +1323,17 @@
   gap: 10px;
 }
 
+.timepoint-embedded-header-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.timepoint-embedded .timepoint-zoom-controls {
+  display: flex;
+}
+
 .timepoint-embedded-mode,
 .timepoint-embedded-access {
   color: var(--text-muted);
@@ -1274,10 +1379,16 @@
 
   .timepoint-embedded-header {
     align-items: flex-start;
+    flex-wrap: wrap;
   }
 
   .timepoint-embedded-heading {
     flex-direction: column;
     gap: 2px;
+  }
+
+  .timepoint-embedded-header-actions {
+    width: 100%;
+    justify-content: space-between;
   }
 }

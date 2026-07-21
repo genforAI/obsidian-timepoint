@@ -1,9 +1,17 @@
-import { App, MarkdownRenderChild } from "obsidian";
+import { App, MarkdownRenderChild, setIcon } from "obsidian";
 import { t } from "../i18n";
 import type { TimePointEntry } from "../model/types";
 import type { TimePointSettings } from "../settings/settings";
 import type { DayFileRepository } from "../storage";
 import { TimelineRenderer } from "../views/TimelineRenderer";
+import {
+  MAX_TIMELINE_ZOOM,
+  MIN_TIMELINE_ZOOM,
+  normalizeTimelineZoom,
+  resolveZoomedScrollTop,
+  stepTimelineZoom,
+  type TimelineInteractionMode,
+} from "../views/timelineNavigation";
 import {
   pathsAffectEmbeddedDay,
   type TimePointBlockConfig,
@@ -40,6 +48,13 @@ export class EmbeddedTimePointBlock extends MarkdownRenderChild {
   private readonly callbacks: EmbeddedTimePointBlockCallbacks;
   private statusEl!: HTMLElement;
   private timelineHostEl!: HTMLElement;
+  private scrollEl!: HTMLElement;
+  private interactionMode: TimelineInteractionMode = "select";
+  private timelineZoom = 1;
+  private panButton: HTMLButtonElement | null = null;
+  private zoomOutButton: HTMLButtonElement | null = null;
+  private zoomResetButton: HTMLButtonElement | null = null;
+  private zoomInButton: HTMLButtonElement | null = null;
   private refreshTimer: number | null = null;
   private renderToken = 0;
 
@@ -122,6 +137,8 @@ export class EmbeddedTimePointBlock extends MarkdownRenderChild {
           onOpenSource: (entry) => {
             void this.runAction(() => this.callbacks.onOpenSource(this.config.date, entry));
           },
+          interactionMode: this.interactionMode,
+          timelineScale: this.timelineZoom,
         },
       );
       if (token !== this.renderToken) return;
@@ -148,14 +165,83 @@ export class EmbeddedTimePointBlock extends MarkdownRenderChild {
       cls: "timepoint-embedded-mode",
       text: this.config.mode === "elastic" ? t("embedded.elastic") : t("embedded.realtime"),
     });
-    header.createSpan({
+    const headerActions = header.createDiv({ cls: "timepoint-embedded-header-actions" });
+    headerActions.createSpan({
       cls: "timepoint-embedded-access",
       text: this.config.editable ? t("embedded.editable") : t("embedded.readonly"),
     });
+    const navigation = headerActions.createDiv({ cls: "timepoint-navigation-tools" });
+    this.panButton = this.navigationButton(navigation, "hand", t("view.pan"));
+    this.panButton.addClass("timepoint-pan-button");
+    this.panButton.addEventListener("click", () => void this.toggleInteractionMode());
+    const zoomControls = navigation.createDiv({ cls: "timepoint-zoom-controls" });
+    this.zoomOutButton = this.navigationButton(zoomControls, "zoom-out", t("view.zoomOut"));
+    this.zoomOutButton.addEventListener(
+      "click",
+      () => void this.setTimelineZoom(stepTimelineZoom(this.timelineZoom, -1)),
+    );
+    this.zoomResetButton = zoomControls.createEl("button", {
+      cls: "timepoint-icon-button timepoint-zoom-reset",
+      attr: { type: "button", "aria-label": t("view.zoomReset") },
+    });
+    this.zoomResetButton.addEventListener("click", () => void this.setTimelineZoom(1));
+    this.zoomInButton = this.navigationButton(zoomControls, "zoom-in", t("view.zoomIn"));
+    this.zoomInButton.addEventListener(
+      "click",
+      () => void this.setTimelineZoom(stepTimelineZoom(this.timelineZoom, 1)),
+    );
+    this.updateNavigationControls();
 
     this.statusEl = this.containerEl.createDiv({ cls: "timepoint-view-status" });
-    const scroll = this.containerEl.createDiv({ cls: "timepoint-embedded-scroll" });
-    this.timelineHostEl = scroll.createDiv({ cls: "timepoint-embedded-timeline-host" });
+    this.scrollEl = this.containerEl.createDiv({ cls: "timepoint-embedded-scroll" });
+    this.timelineHostEl = this.scrollEl.createDiv({ cls: "timepoint-embedded-timeline-host" });
+  }
+
+  private navigationButton(container: HTMLElement, icon: string, label: string): HTMLButtonElement {
+    const button = container.createEl("button", {
+      cls: "timepoint-icon-button",
+      attr: { type: "button", "aria-label": label },
+    });
+    setIcon(button, icon);
+    return button;
+  }
+
+  private async toggleInteractionMode(): Promise<void> {
+    this.interactionMode = this.interactionMode === "pan" ? "select" : "pan";
+    this.updateNavigationControls();
+    await this.refresh();
+  }
+
+  private async setTimelineZoom(nextZoom: number): Promise<void> {
+    const normalized = normalizeTimelineZoom(nextZoom);
+    if (normalized === this.timelineZoom) return;
+    const previousScrollTop = this.scrollEl.scrollTop;
+    const previousScrollHeight = this.scrollEl.scrollHeight;
+    const previousClientHeight = this.scrollEl.clientHeight;
+    this.timelineZoom = normalized;
+    this.updateNavigationControls();
+    await this.refresh();
+    await nextFrame();
+    this.scrollEl.scrollTop = resolveZoomedScrollTop(
+      previousScrollTop,
+      previousScrollHeight,
+      previousClientHeight,
+      this.scrollEl.scrollHeight,
+      this.scrollEl.clientHeight,
+    );
+  }
+
+  private updateNavigationControls(): void {
+    const panActive = this.interactionMode === "pan";
+    this.panButton?.toggleClass("is-active", panActive);
+    this.panButton?.setAttr("aria-pressed", String(panActive));
+    this.panButton?.setAttr("aria-label", t(panActive ? "view.panActive" : "view.pan"));
+    if (this.zoomResetButton) {
+      this.zoomResetButton.setText(`${Math.round(this.timelineZoom * 100)}%`);
+      this.zoomResetButton.setAttr("title", t("view.zoomReset"));
+    }
+    if (this.zoomOutButton) this.zoomOutButton.disabled = this.timelineZoom <= MIN_TIMELINE_ZOOM;
+    if (this.zoomInButton) this.zoomInButton.disabled = this.timelineZoom >= MAX_TIMELINE_ZOOM;
   }
 
   private registerVaultRefreshEvents(): void {
@@ -201,4 +287,8 @@ export function renderTimePointBlockConfigError(
   error.createEl("strong", { text: t("embedded.invalid") });
   const list = error.createEl("ul");
   for (const issue of issues) list.createEl("li", { text: issue.message });
+}
+
+function nextFrame(): Promise<void> {
+  return new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
 }

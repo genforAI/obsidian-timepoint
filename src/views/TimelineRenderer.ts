@@ -29,7 +29,13 @@ import {
   isWithinTimelineAxisHitArea,
   mapTimelineYToStoredTime,
 } from "./timelineInteraction";
-import { resolveTimelineDensity, type TimelineDensityProfile } from "./timelineDensity";
+import { normalizeTimelineZoom, type TimelineInteractionMode } from "./timelineNavigation";
+import {
+  resolveRealtimeLaneGeometry,
+  resolveTimelineDensity,
+  selectVisibleTimelineBadgeMinutes,
+  type TimelineDensityProfile,
+} from "./timelineDensity";
 
 export interface TimelineRendererCallbacks {
   /** Defaults to true. False keeps review actions but suppresses all mutations. */
@@ -46,6 +52,9 @@ export interface TimelineRendererCallbacks {
   onLearn?: () => void;
   /** The callback performs the conflict-aware mutation after local confirmation. */
   onDeleteEntry?: (entry: TimePointEntry) => Promise<void> | void;
+  /** Runtime-only navigation state owned by the containing workspace view. */
+  interactionMode?: TimelineInteractionMode;
+  timelineScale?: number;
 }
 
 interface RenderSnapshot {
@@ -111,14 +120,16 @@ export class TimelineRenderer extends Component {
     this.cleanupRenderState(false);
     const { container, entries, mode, sourcePath, settings, callbacks } = snapshot;
     const editable = callbacks.editable !== false;
+    const interactionMode = callbacks.interactionMode ?? "select";
+    const timelineScale = normalizeTimelineZoom(callbacks.timelineScale ?? 1);
     container.empty();
 
     const timeline = container.createDiv({
-      cls: `timepoint-timeline is-${mode}`,
+      cls: `timepoint-timeline is-${mode}${interactionMode === "pan" ? " is-pan-mode" : ""}`,
       attr: {
         role: "region",
         "data-mode-label": mode === "elastic" ? t("view.elasticSpacing") : t("view.exactSpacing"),
-        "aria-label": `${mode === "elastic" ? "Elastic" : "Real-time"} daily timeline.${editable ? " Click near the day axis to add an event." : " Read-only."}`,
+        "aria-label": `${mode === "elastic" ? "Elastic" : "Real-time"} daily timeline.${interactionMode === "pan" ? " Hand tool active; drag to pan." : editable ? " Click near the day axis to add an event." : " Read-only."}`,
       },
     });
     const density = resolveTimelineDensity(
@@ -237,17 +248,17 @@ export class TimelineRenderer extends Component {
     await nextFrame();
     if (token !== this.renderToken) return;
 
-    let layout = this.calculateLayout(entries, cards, mode, settings, density);
+    let layout = this.calculateLayout(entries, cards, mode, settings, density, timelineScale);
     // Real-time lane widths can change natural Markdown height and therefore a
     // smart/preview decision. Two bounded measurement passes converge both.
     for (let pass = 0; pass < 2; pass += 1) {
-      this.applyRealtimeColumns(timeline, cardLayer, cards, layout, density);
+      this.applyRealtimeColumns(timeline, cardLayer, cards, layout, density, timelineScale);
       await nextFrame();
       if (token !== this.renderToken) return;
       for (const state of cardStates.values()) this.refreshCardDisplay(state, settings, density);
-      layout = this.calculateLayout(entries, cards, mode, settings, density);
+      layout = this.calculateLayout(entries, cards, mode, settings, density, timelineScale);
     }
-    this.applyRealtimeColumns(timeline, cardLayer, cards, layout, density);
+    this.applyRealtimeColumns(timeline, cardLayer, cards, layout, density, timelineScale);
     timeline.style.setProperty("--tp-timeline-height", `${Math.ceil(layout.totalHeight)}px`);
     timeline.style.setProperty("--tp-axis-top-y", `${layout.axisTop}px`);
     timeline.style.setProperty(
@@ -256,11 +267,25 @@ export class TimelineRenderer extends Component {
     );
 
     this.renderAxisLabels(timeline, layout, settings);
-    this.positionCardsAndNodes(timeline, cardLayer, cards, entryById, layout, settings, callbacks);
+    this.positionCardsAndNodes(
+      timeline,
+      cardLayer,
+      cards,
+      entryById,
+      layout,
+      settings,
+      density,
+      callbacks,
+    );
 
     if (entries.length === 0) this.renderEmptyState(timeline, callbacks, editable);
 
-    if (editable) this.installAxisInteraction(timeline, layout, settings, callbacks);
+    if (editable && interactionMode === "select") {
+      this.installAxisInteraction(timeline, layout, settings, callbacks);
+    }
+    if (interactionMode === "pan" && scrollContainer) {
+      this.installPanInteraction(timeline, scrollContainer);
+    }
 
     await nextFrame();
     if (token !== this.renderToken) return;
@@ -304,6 +329,7 @@ export class TimelineRenderer extends Component {
     mode: TimelineMode,
     settings: TimePointSettings,
     density: TimelineDensityProfile,
+    timelineScale: number,
   ): TimelineLayoutResult {
     return calculateTimelineLayout(
       mode,
@@ -314,7 +340,9 @@ export class TimelineRenderer extends Component {
         estimatedHeight: 96,
       })),
       {
-        minimumHeight: mode === "elastic" ? settings.timelineBaseHeight : settings.realtimeHeight,
+        minimumHeight:
+          (mode === "elastic" ? settings.timelineBaseHeight : settings.realtimeHeight) *
+          timelineScale,
         topPadding: 36,
         bottomPadding: 44,
         cardGap: Math.min(settings.minimumCardGap, density.layoutCardGap),
@@ -344,10 +372,15 @@ export class TimelineRenderer extends Component {
     entryById: ReadonlyMap<string, TimePointEntry>,
     layout: TimelineLayoutResult,
     settings: TimePointSettings,
+    density: TimelineDensityProfile,
     callbacks: TimelineRendererCallbacks,
   ): void {
     const nodeByMinute = new Map<number, HTMLButtonElement>();
     const entriesByMinute = new Map<number, TimePointEntry[]>();
+    const visibleBadgeMinutes = selectVisibleTimelineBadgeMinutes(
+      layout.entries,
+      density.minimumBadgeSpacing,
+    );
     for (const positioned of layout.entries) {
       const entry = entryById.get(positioned.id);
       if (!entry) continue;
@@ -372,17 +405,21 @@ export class TimelineRenderer extends Component {
       let node = nodeByMinute.get(positioned.minuteOfDay);
       if (!node) {
         const entriesAtMinute = entriesByMinute.get(positioned.minuteOfDay) ?? [entry];
+        const displayTime = formatDisplayTime(entry.time, settings.timeFormat);
+        const showPermanentBadge = visibleBadgeMinutes.has(positioned.minuteOfDay);
         node = timeline.createEl("button", {
           cls: `timepoint-node${entry.date === currentDate && entry.time === currentTime ? " is-current" : ""}`,
           attr: {
             type: "button",
             "data-minute": String(positioned.minuteOfDay),
+            "data-time-label": displayTime,
             "aria-label": `${entriesAtMinute.length} TimePoint${entriesAtMinute.length === 1 ? "" : "s"} at ${entry.time}`,
           },
         });
         node.style.setProperty("--tp-y", `${positioned.nodeY}px`);
         node.disabled = callbacks.editable === false;
         node.toggleClass("is-readonly", callbacks.editable === false);
+        node.toggleClass("is-badge-suppressed", !showPermanentBadge);
         node.addEventListener("click", (event) => {
           event.stopPropagation();
           if (callbacks.editable === false) return;
@@ -403,9 +440,11 @@ export class TimelineRenderer extends Component {
         });
         nodeByMinute.set(positioned.minuteOfDay, node);
 
-        const badge = timeline.createDiv({ cls: "timepoint-time-badge" });
-        badge.style.setProperty("--tp-y", `${positioned.nodeY}px`);
-        badge.createSpan({ text: formatDisplayTime(entry.time, settings.timeFormat) });
+        if (showPermanentBadge) {
+          const badge = timeline.createDiv({ cls: "timepoint-time-badge" });
+          badge.style.setProperty("--tp-y", `${positioned.nodeY}px`);
+          badge.createSpan({ text: displayTime });
+        }
       }
 
       if (settings.showConnectors) {
@@ -491,6 +530,7 @@ export class TimelineRenderer extends Component {
     cards: ReadonlyMap<string, HTMLElement>,
     layout: TimelineLayoutResult,
     density: TimelineDensityProfile,
+    timelineScale: number,
   ): void {
     if (layout.mode !== "realtime") {
       timeline.style.removeProperty("--tp-timeline-min-width");
@@ -502,15 +542,14 @@ export class TimelineRenderer extends Component {
     }
 
     const columnCount = Math.max(1, layout.columnCount);
-    const gap = density.realtimeColumnGap;
     const cardStart = cardLayer.offsetLeft || parseCssPixels(timeline, "--tp-card-start", 124);
     const viewportWidth = timeline.parentElement?.clientWidth ?? timeline.clientWidth;
-    const minimumColumnWidth =
-      columnCount > 1
-        ? density.minimumRealtimeColumnWidth
-        : Math.min(180, density.minimumRealtimeColumnWidth);
-    const requiredWidth =
-      cardStart + columnCount * minimumColumnWidth + (columnCount - 1) * gap + 16;
+    const { gap, minimumColumnWidth, requiredWidth } = resolveRealtimeLaneGeometry(
+      density,
+      columnCount,
+      cardStart,
+      timelineScale,
+    );
     if (requiredWidth > viewportWidth) {
       timeline.style.setProperty("--tp-timeline-min-width", `${requiredWidth}px`);
     } else {
@@ -841,6 +880,57 @@ export class TimelineRenderer extends Component {
           createPending = false;
         });
     });
+  }
+
+  private installPanInteraction(timeline: HTMLElement, scrollContainer: HTMLElement): void {
+    let pointerId: number | null = null;
+    let startX = 0;
+    let startY = 0;
+    let startScrollLeft = 0;
+    let startScrollTop = 0;
+
+    const finishPan = (event: PointerEvent): void => {
+      if (pointerId !== event.pointerId) return;
+      pointerId = null;
+      timeline.removeClass("is-panning");
+      try {
+        timeline.releasePointerCapture(event.pointerId);
+      } catch {
+        // Obsidian may have replaced the pointer target while a leaf resized.
+      }
+    };
+
+    timeline.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      pointerId = event.pointerId;
+      startX = event.clientX;
+      startY = event.clientY;
+      startScrollLeft = scrollContainer.scrollLeft;
+      startScrollTop = scrollContainer.scrollTop;
+      timeline.addClass("is-panning");
+      try {
+        timeline.setPointerCapture(event.pointerId);
+      } catch {
+        // Dragging still works while the pointer remains over the timeline.
+      }
+    });
+    timeline.addEventListener("pointermove", (event) => {
+      if (pointerId !== event.pointerId) return;
+      event.preventDefault();
+      scrollContainer.scrollLeft = startScrollLeft - (event.clientX - startX);
+      scrollContainer.scrollTop = startScrollTop - (event.clientY - startY);
+    });
+    timeline.addEventListener("pointerup", finishPan);
+    timeline.addEventListener("pointercancel", finishPan);
+    timeline.addEventListener("lostpointercapture", finishPan);
+
+    const suppressTimelineAction = (event: Event): void => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    timeline.addEventListener("click", suppressTimelineAction, true);
+    timeline.addEventListener("dblclick", suppressTimelineAction, true);
   }
 
   private cleanupRenderState(invalidate = true): void {

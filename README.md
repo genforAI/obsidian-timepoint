@@ -13,6 +13,8 @@ telemetry, or network request.
 - Opens the complete event in a normal Obsidian Markdown editor; double-click a card to edit.
 - Keeps long text, images, tables, code, callouts, and embeds clipped inside timeline cards.
 - Reflows dense periods in Elastic mode or preserves proportional time in Real-time mode.
+- Provides an explicit Hand tool for two-dimensional panning plus 50–300% runtime zoom; selecting,
+  creating, and editing return unchanged when the Hand tool is off.
 - Follows the active Obsidian theme in Native mode; Signature mode derives a restrained accent
   layer from the user's `--interactive-accent`.
 - Adapts at narrow split widths with container queries and 44 px touch targets.
@@ -70,6 +72,11 @@ export**.
 
 Cards never expand into full documents inside the timeline. A visible fade and “preview ends
 here” label mark clipped content, including the lower portion of oversized images.
+
+Use the Hand button to drag a zoomed timeline vertically or horizontally without opening cards or
+creating events. Zoom Out, the percentage reset, and Zoom In affect only runtime geometry; they do
+not change timestamps, Markdown, or saved settings. At narrow widths the same controls remain in
+the `…` menu.
 
 ## Embed a timeline
 

@@ -38,6 +38,10 @@ scaling, version/hash, and synthetic fixture revision. Never include personal no
       not overlap.
 - [ ] Elastic → Real-time mode changes show the axis and earliest event on the first painted frame,
       with no stale horizontal blank region.
+- [ ] Dense proportional badges never overlap; suppressed exact times appear on node hover/focus.
+- [ ] Hand mode drags vertically and horizontally without creating or opening an event.
+- [ ] 50–300% zoom and 100% reset preserve the relative viewport centre and never change Markdown
+      or timestamps.
 
 ## Native records and previews
 

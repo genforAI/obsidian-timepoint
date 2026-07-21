@@ -14,6 +14,7 @@ export interface TimelineDensityProfile {
   minimumRealtimeColumnWidth: number;
   realtimeColumnGap: number;
   layoutCardGap: number;
+  minimumBadgeSpacing: number;
   peakHourEntries: number;
   maximumSameMinuteEntries: number;
 }
@@ -56,10 +57,16 @@ export function resolveTimelineDensity(
 
   const densityValues =
     level === "dense"
-      ? { previewHeight: 24, columnWidth: 132, columnGap: 8, cardGap: 7 }
+      ? { previewHeight: 24, columnWidth: 132, columnGap: 8, cardGap: 7, badgeGap: 28 }
       : level === "compact"
-        ? { previewHeight: 64, columnWidth: 168, columnGap: 9, cardGap: 9 }
-        : { previewHeight: null, columnWidth: 220, columnGap: 10, cardGap: 12 };
+        ? { previewHeight: 64, columnWidth: 168, columnGap: 9, cardGap: 9, badgeGap: 20 }
+        : {
+            previewHeight: null,
+            columnWidth: 220,
+            columnGap: 10,
+            cardGap: 12,
+            badgeGap: 0,
+          };
   const usableWidth = Math.max(
     densityValues.columnWidth,
     normalizeWidth(containerWidth) - Math.max(MINIMUM_CARD_START, cardStart) - CARD_END_INSET,
@@ -79,9 +86,75 @@ export function resolveTimelineDensity(
     minimumRealtimeColumnWidth: densityValues.columnWidth,
     realtimeColumnGap: densityValues.columnGap,
     layoutCardGap: densityValues.cardGap,
+    minimumBadgeSpacing: densityValues.badgeGap,
     peakHourEntries,
     maximumSameMinuteEntries,
   };
+}
+
+export interface TimelineBadgeCandidate {
+  minuteOfDay: number;
+  nodeY: number;
+}
+
+export interface RealtimeLaneGeometry {
+  gap: number;
+  minimumColumnWidth: number;
+  requiredWidth: number;
+}
+
+/** Zoom expands both time distance and lane width, enabling two-dimensional panning on intent. */
+export function resolveRealtimeLaneGeometry(
+  density: TimelineDensityProfile,
+  columnCount: number,
+  cardStart: number,
+  timelineScale: number,
+): RealtimeLaneGeometry {
+  const columns = Math.max(1, Math.floor(columnCount));
+  const scale = Math.max(0.5, Math.min(3, timelineScale));
+  const gap = density.realtimeColumnGap * Math.min(1.5, scale);
+  const baseMinimumColumnWidth =
+    columns > 1
+      ? density.minimumRealtimeColumnWidth
+      : Math.min(180, density.minimumRealtimeColumnWidth);
+  const minimumColumnWidth = Math.max(112, baseMinimumColumnWidth * scale);
+  return {
+    gap,
+    minimumColumnWidth,
+    requiredWidth:
+      Math.max(0, cardStart) + columns * minimumColumnWidth + (columns - 1) * gap + CARD_END_INSET,
+  };
+}
+
+/**
+ * Select permanent axis badges without letting nearby event labels collide.
+ * Every node remains interactive and exposes its precise time through its
+ * accessible label and an on-intent tooltip.
+ */
+export function selectVisibleTimelineBadgeMinutes(
+  candidates: readonly TimelineBadgeCandidate[],
+  minimumSpacing: number,
+): ReadonlySet<number> {
+  const spacing = Number.isFinite(minimumSpacing) ? Math.max(0, minimumSpacing) : 0;
+  const unique = new Map<number, number>();
+  for (const candidate of candidates) {
+    if (!Number.isFinite(candidate.minuteOfDay) || !Number.isFinite(candidate.nodeY)) continue;
+    if (!unique.has(candidate.minuteOfDay)) unique.set(candidate.minuteOfDay, candidate.nodeY);
+  }
+  const ordered = [...unique].sort((left, right) => {
+    if (left[1] !== right[1]) return left[1] - right[1];
+    return left[0] - right[0];
+  });
+  if (spacing === 0) return new Set(ordered.map(([minute]) => minute));
+
+  const visible = new Set<number>();
+  let lastY = Number.NEGATIVE_INFINITY;
+  for (const [minute, nodeY] of ordered) {
+    if (nodeY - lastY < spacing) continue;
+    visible.add(minute);
+    lastY = nodeY;
+  }
+  return visible;
 }
 
 function calculatePeakWindow(minutes: readonly number[], windowMinutes: number): number {

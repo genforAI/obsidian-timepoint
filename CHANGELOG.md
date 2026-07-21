@@ -12,6 +12,11 @@ Theme-native UI, inclusive range export, and public beta engineering.
 - Added density-adaptive timeline previews. Clustered hours compact Markdown presentation, reduce
   lane width, cap Real-time lane count to the current leaf, and pack overflow downward without
   changing event files or proportional time nodes.
+- Added a transient Hand tool for drag panning and 50–300% zoom controls. Zoom expands temporal
+  distance and lane width for intentional two-dimensional inspection without changing stored data
+  or replacing the normal create/edit interaction mode.
+- Thinned permanent time badges when proportional nodes are too close to label safely; suppressed
+  labels remain available from the node's accessible name and on-intent tooltip.
 - Fixed occupied-minute creation previews so the existing node receives one local highlight rather
   than drawing a duplicate time badge or accenting the full axis; creation is single-flight.
 - Reset stale horizontal anchors and settle Real-time positioning after its first painted frame,
@@ -30,7 +35,7 @@ Theme-native UI, inclusive range export, and public beta engineering.
 - Added Obsidian-specific ESLint, minified production builds, Node 20/22 CI, exact-tag release
   checks, issue/PR templates, security/contribution/publishing docs, and Git ignores for internal
   handoff evidence and `main.js`.
-- Expanded public automated coverage to 135 tests across 14 files, including 39-entry clustered,
+- Expanded public automated coverage to 139 tests across 14 files, including 39-entry clustered,
   96 same-minute narrow-leaf, and 180-entry deterministic packing stress cases.
 
 ## 0.4.0 - 2026-07-21
