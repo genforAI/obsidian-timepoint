@@ -1,0 +1,24 @@
+name: Feature request
+description: Suggest a focused improvement to the local-first timeline workflow.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+    validations:
+      required: true
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Desired workflow
+      description: Describe what should happen to ordinary Markdown files and existing data.
+    validations:
+      required: true
+  - type: checkboxes
+    id: local
+    attributes:
+      label: Local-first expectations
+      options:
+        - label: This can work without an account, telemetry, or required network service.

@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Obsidian community help
+    url: https://forum.obsidian.md/
+    about: Ask general Obsidian usage questions that are not TimePoint bugs.

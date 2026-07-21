@@ -1,0 +1,20 @@
+node_modules/
+main.js
+*.map
+coverage/
+.DS_Store
+release/
+fixtures/output/
+
+# Local handoff evidence and design inputs are intentionally not public.
+runtime-evidence/
+verification/
+design-reference/
+RUN_02_*
+scripts/generate-run02-*.mjs
+tests/run02Fixture.test.ts
+docs/HANDOFF_REPORT.md
+
+# Local test vaults and release staging.
+*.zip
+*.sha256

@@ -1,0 +1,12 @@
+node_modules
+main.js
+release
+coverage
+fixtures/output
+runtime-evidence
+verification
+design-reference
+RUN_02_*
+docs/HANDOFF_REPORT.md
+scripts/generate-run02-*.mjs
+tests/run02Fixture.test.ts

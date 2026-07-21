@@ -1,0 +1,1233 @@
+/* TimePoint uses Obsidian theme variables first and adds one restrained accent layer. */
+.workspace-leaf-content[data-type="timepoint-view"] .view-content {
+  padding: 0;
+  overflow: hidden;
+}
+
+/* This stays a real MarkdownView. Live Preview hides only TimePoint's
+   machine-owned comment lines and stable IDs; Source mode and the file bytes
+   remain untouched. */
+.timepoint-native-editor.is-legacy-day .markdown-source-view.mod-cm6 .cm-line:has(.cm-comment) {
+  display: none;
+}
+
+.timepoint-native-editor.is-legacy-day .markdown-source-view.mod-cm6 .cm-blockid {
+  display: none;
+}
+
+.timepoint-view,
+.timepoint-modal,
+.timepoint-settings,
+.timepoint-embedded {
+  --tp-accent: var(--interactive-accent);
+  --tp-accent-soft: color-mix(in srgb, var(--interactive-accent) 11%, transparent);
+  --tp-accent-border: color-mix(
+    in srgb,
+    var(--interactive-accent) 38%,
+    var(--background-modifier-border)
+  );
+  --tp-card-background: var(--background-primary-alt, var(--background-primary));
+  --tp-card-shadow: none;
+}
+
+.timepoint-view {
+  --tp-axis-x: 84px;
+  --tp-card-start: 124px;
+  --tp-node-size: 14px;
+  height: 100%;
+  min-height: 0;
+  color: var(--text-normal);
+  background: var(--background-primary);
+  container-type: inline-size;
+}
+
+.timepoint-appearance-native {
+  --tp-card-shadow: none;
+}
+
+.timepoint-appearance-signature {
+  --tp-accent-soft: color-mix(in srgb, var(--interactive-accent) 15%, transparent);
+  --tp-accent-border: color-mix(
+    in srgb,
+    var(--interactive-accent) 52%,
+    var(--background-modifier-border)
+  );
+  --tp-card-background: color-mix(
+    in srgb,
+    var(--background-primary-alt, var(--background-primary)) 97%,
+    var(--interactive-accent) 3%
+  );
+  --tp-card-shadow: var(--shadow-s);
+}
+
+.timepoint-view.timepoint-appearance-signature {
+  background: linear-gradient(
+    145deg,
+    var(--background-primary) 0%,
+    color-mix(in srgb, var(--background-primary) 96%, var(--interactive-accent) 4%) 100%
+  );
+}
+
+.timepoint-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.timepoint-toolbar {
+  position: sticky;
+  z-index: 20;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+}
+
+.timepoint-appearance-signature .timepoint-toolbar {
+  background: color-mix(in srgb, var(--background-primary) 94%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.timepoint-date-cluster,
+.timepoint-action-cluster,
+.timepoint-nav-cluster {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.timepoint-date-copy {
+  min-width: 10rem;
+  margin-inline: 4px 8px;
+}
+
+.timepoint-date-title {
+  margin: 0;
+  font-size: var(--font-ui-large);
+  font-weight: var(--font-semibold);
+  line-height: 1.2;
+  letter-spacing: -0.012em;
+}
+
+.timepoint-weekday {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.timepoint-icon-button,
+.timepoint-button,
+.timepoint-mode-select,
+.timepoint-date-input {
+  min-height: 40px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--button-radius, 8px);
+  color: var(--text-normal);
+  background: var(--background-secondary);
+  box-shadow: none;
+}
+
+.timepoint-icon-button {
+  display: inline-flex;
+  width: 40px;
+  min-width: 40px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.timepoint-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  font-weight: var(--font-medium);
+}
+
+.timepoint-button.is-accent {
+  border-color: transparent;
+  color: var(--text-on-accent);
+  background: var(--tp-accent);
+}
+
+.timepoint-button.is-danger {
+  color: var(--text-error);
+}
+
+.timepoint-icon-button:hover,
+.timepoint-button:not(.is-accent):hover,
+.timepoint-mode-select:hover,
+.timepoint-date-input:hover {
+  border-color: var(--background-modifier-border-hover);
+  background: var(--background-modifier-hover);
+}
+
+.timepoint-icon-button:focus-visible,
+.timepoint-button:focus-visible,
+.timepoint-mode-select:focus-visible,
+.timepoint-date-input:focus-visible,
+.timepoint-card:focus-visible,
+.timepoint-time-mode button:focus-visible {
+  outline: 2px solid var(--tp-accent);
+  outline-offset: 2px;
+}
+
+.timepoint-mode-select,
+.timepoint-date-input {
+  padding-inline: 10px;
+}
+
+.timepoint-mode-select {
+  padding-right: 34px;
+  background-position: right 7px center;
+  background-repeat: no-repeat;
+  background-size: 22px 22px;
+}
+
+.timepoint-content-scroll {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  container-type: inline-size;
+}
+
+.timepoint-view-status {
+  position: sticky;
+  z-index: 12;
+  top: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 16px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 9px;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+}
+
+.timepoint-diagnostic-copy {
+  min-width: 0;
+  flex: 1 1 24rem;
+}
+
+.timepoint-diagnostic-summary {
+  margin-top: 3px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.timepoint-diagnostic-details {
+  margin-top: 7px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.timepoint-diagnostic-details summary {
+  cursor: pointer;
+}
+
+.timepoint-diagnostic-details ul {
+  max-height: 11rem;
+  margin: 7px 0 0;
+  padding-left: 20px;
+  overflow: auto;
+}
+
+.timepoint-diagnostic-actions {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.timepoint-diagnostic-actions .timepoint-button {
+  min-height: 32px;
+  white-space: nowrap;
+}
+
+.timepoint-view-status.is-warning {
+  border-color: var(--color-yellow);
+}
+
+.timepoint-view-status.is-error {
+  border-color: var(--color-red);
+  color: var(--text-error);
+}
+
+.timepoint-loading {
+  display: grid;
+  min-height: 280px;
+  place-items: center;
+  color: var(--text-muted);
+}
+
+.timepoint-empty {
+  position: absolute;
+  z-index: 5;
+  top: 17%;
+  right: 20px;
+  left: var(--tp-card-start);
+  display: flex;
+  max-width: 32rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 22px;
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--background-secondary) 82%, transparent);
+}
+
+.timepoint-empty h3,
+.timepoint-empty p {
+  margin: 0;
+}
+
+.timepoint-empty p {
+  color: var(--text-muted);
+}
+
+.timepoint-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.timepoint-timeline {
+  position: relative;
+  width: auto;
+  min-width: var(--tp-timeline-min-width, 310px);
+  height: var(--tp-timeline-height, auto);
+  margin: 8px 16px 40px;
+  cursor: default;
+  user-select: none;
+}
+
+.timepoint-timeline.is-axis-hot {
+  cursor: crosshair;
+}
+
+.timepoint-timeline.is-axis-hot::before {
+  background: var(--tp-accent);
+  box-shadow: 0 0 0 4px var(--tp-accent-soft);
+}
+
+.timepoint-timeline::before {
+  position: absolute;
+  z-index: 0;
+  top: 28px;
+  bottom: 28px;
+  left: var(--tp-axis-x);
+  width: 2px;
+  border-radius: 999px;
+  background: var(--background-modifier-border-hover);
+  content: "";
+  opacity: 0.82;
+}
+
+.timepoint-timeline.is-realtime::after {
+  position: absolute;
+  top: 12px;
+  right: 8px;
+  padding: 3px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  content: attr(data-mode-label);
+  font-size: 11px;
+}
+
+.timepoint-timeline.is-elastic::after {
+  position: absolute;
+  top: 12px;
+  right: 8px;
+  padding: 3px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  content: attr(data-mode-label);
+  font-size: 11px;
+}
+
+.timepoint-time-label {
+  position: absolute;
+  z-index: 2;
+  top: var(--tp-y, 0);
+  left: 0;
+  width: calc(var(--tp-axis-x) - 15px);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.timepoint-time-label::after {
+  position: absolute;
+  top: 50%;
+  right: -15px;
+  width: 9px;
+  height: 1px;
+  background: var(--text-faint);
+  content: "";
+}
+
+.timepoint-node {
+  position: absolute;
+  z-index: 7;
+  top: var(--tp-y, 0);
+  left: calc(var(--tp-axis-x) - var(--tp-node-size) / 2 + 1px);
+  width: var(--tp-node-size);
+  height: var(--tp-node-size);
+  margin: 0;
+  padding: 0;
+  border: 3px solid var(--background-primary);
+  border-radius: 50%;
+  background: var(--background-primary);
+  box-shadow: 0 0 0 1px var(--text-faint);
+  transform: translateY(-50%);
+  cursor: pointer;
+}
+
+.timepoint-node:hover,
+.timepoint-node:focus-visible {
+  background: var(--tp-accent);
+  box-shadow: 0 0 0 3px var(--tp-accent-soft);
+  transform: translateY(-50%) scale(1.18);
+}
+
+.timepoint-node.is-readonly {
+  opacity: 0.8;
+  cursor: default;
+}
+
+.timepoint-node.is-readonly:hover {
+  transform: translateY(-50%);
+}
+
+.timepoint-node.is-current {
+  background: var(--tp-accent);
+  animation: timepoint-pulse 2.2s ease-in-out infinite;
+}
+
+.timepoint-connector {
+  position: absolute;
+  z-index: 3;
+  top: var(--tp-connector-top, 0);
+  left: var(--tp-connector-left, calc(var(--tp-axis-x) + 8px));
+  width: var(--tp-connector-width, 0);
+  height: 1px;
+  background: var(--background-modifier-border-hover);
+  opacity: 0.72;
+  transform: rotate(var(--tp-connector-angle, 0deg));
+  transform-origin: left center;
+  pointer-events: none;
+}
+
+.timepoint-card-layer {
+  position: absolute;
+  inset: 0 0 0 var(--tp-card-start);
+  pointer-events: none;
+}
+
+.timepoint-card {
+  position: absolute;
+  box-sizing: border-box;
+  z-index: 6;
+  top: var(--tp-card-y, 0);
+  left: var(--tp-column-x, 0);
+  width: var(--tp-column-width, min(100%, 64rem));
+  min-width: 0;
+  padding: 11px 13px 12px;
+  overflow: hidden;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 12px;
+  color: var(--text-normal);
+  background: var(--tp-card-background);
+  box-shadow: var(--tp-card-shadow);
+  cursor: default;
+  user-select: text;
+  pointer-events: auto;
+}
+
+.timepoint-card:hover,
+.timepoint-card:focus-within {
+  border-color: var(--background-modifier-border-hover);
+  box-shadow: 0 0 0 2px var(--tp-accent-soft);
+}
+
+.timepoint-card.is-being-edited {
+  border-color: var(--tp-accent);
+  box-shadow: 0 0 0 2px var(--tp-accent-soft);
+}
+
+.timepoint-card.is-being-edited::before {
+  position: absolute;
+  top: 11px;
+  bottom: 11px;
+  left: 0;
+  width: 3px;
+  border-radius: 0 999px 999px 0;
+  background: var(--tp-accent);
+  content: "";
+}
+
+.timepoint-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 5px;
+}
+
+.timepoint-card-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.timepoint-card-time svg {
+  color: var(--text-faint);
+}
+
+.timepoint-card-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 3px;
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
+}
+
+.timepoint-card .timepoint-card-action {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  color: var(--text-muted);
+  background: transparent;
+  box-shadow: none;
+}
+
+.timepoint-card-action:hover,
+.timepoint-card-action:focus-visible {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+.timepoint-markdown {
+  position: relative;
+  overflow: hidden;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  line-height: 1.48;
+  overflow-wrap: anywhere;
+}
+
+.timepoint-card.is-clipped .timepoint-markdown::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 36px;
+  background: linear-gradient(transparent, var(--tp-card-background));
+  content: "";
+  pointer-events: none;
+}
+
+.timepoint-card-overflow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 9px -2px -2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.3;
+  user-select: none;
+}
+
+.timepoint-card-overflow[hidden] {
+  display: none;
+}
+
+.timepoint-card-overflow-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-muted);
+}
+
+.timepoint-card-overflow-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.timepoint-markdown > :first-child {
+  margin-top: 0;
+}
+
+.timepoint-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.timepoint-markdown h1,
+.timepoint-markdown h2,
+.timepoint-markdown h3,
+.timepoint-markdown h4 {
+  margin: 0.3em 0 0.35em;
+  font-size: 1.08em;
+}
+
+.timepoint-markdown p,
+.timepoint-markdown ul,
+.timepoint-markdown ol,
+.timepoint-markdown pre,
+.timepoint-markdown blockquote {
+  margin-block: 0.38em;
+}
+
+.timepoint-markdown img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 7px;
+}
+
+.timepoint-markdown pre,
+.timepoint-markdown .table-wrapper {
+  max-width: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.timepoint-markdown code {
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.timepoint-markdown table {
+  width: max-content;
+  min-width: 100%;
+}
+
+.timepoint-markdown .callout {
+  margin-block: 0.45em;
+  padding: 8px 10px;
+}
+
+.timepoint-markdown .callout-title {
+  gap: 6px;
+  padding: 0;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .timepoint-card-actions {
+    opacity: 0.58;
+    transform: translateY(-2px);
+  }
+
+  .timepoint-card:hover .timepoint-card-actions,
+  .timepoint-card:focus-within .timepoint-card-actions,
+  .timepoint-card.is-being-edited .timepoint-card-actions {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.timepoint-ghost-node {
+  position: absolute;
+  z-index: 9;
+  top: var(--tp-y, 0);
+  left: calc(var(--tp-axis-x) - 6px + 1px);
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--tp-accent);
+  border-radius: 50%;
+  background: var(--background-primary);
+  box-shadow: 0 0 0 5px var(--tp-accent-soft);
+  opacity: 0.9;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.timepoint-ghost-time {
+  position: absolute;
+  z-index: 9;
+  top: var(--tp-y, 0);
+  left: 0;
+  width: calc(var(--tp-axis-x) - 15px);
+  color: var(--text-accent);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-medium);
+  text-align: right;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.timepoint-ghost-node[hidden],
+.timepoint-ghost-time[hidden] {
+  display: none;
+}
+
+.timepoint-time-badge {
+  position: absolute;
+  z-index: 8;
+  top: var(--tp-y, 0);
+  left: 0;
+  width: calc(var(--tp-axis-x) - 15px);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.timepoint-time-badge span {
+  display: inline-block;
+  padding: 3px 7px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 7px;
+  background: var(--background-secondary);
+}
+
+.timepoint-confirmation-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.modal.timepoint-modal {
+  width: min(620px, calc(100vw - 32px));
+  border: 1px solid var(--background-modifier-border);
+}
+
+.timepoint-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.timepoint-editor h2,
+.timepoint-import h2 {
+  margin: 0;
+}
+
+.timepoint-editor-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.timepoint-editor-field > label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-medium);
+}
+
+.timepoint-time-mode {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 3px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 9px;
+  background: var(--background-secondary);
+}
+
+.timepoint-time-mode button {
+  min-height: 36px;
+  margin: 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--text-muted);
+  background: transparent;
+  box-shadow: none;
+}
+
+.timepoint-time-mode button.is-active {
+  color: var(--text-on-accent);
+  background: var(--tp-accent);
+}
+
+.timepoint-time-input,
+.timepoint-editor textarea,
+.timepoint-import textarea {
+  width: 100%;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  color: var(--text-normal);
+  background: var(--background-primary);
+}
+
+.timepoint-time-input {
+  min-height: 38px;
+  padding-inline: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.timepoint-editor textarea {
+  min-height: 220px;
+  padding: 12px;
+  resize: vertical;
+  font-family: var(--font-text);
+  line-height: 1.5;
+}
+
+.timepoint-editor-error {
+  min-height: 1.2em;
+  color: var(--text-error);
+  font-size: var(--font-ui-smaller);
+}
+
+.timepoint-editor-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.timepoint-editor-actions .is-spacer {
+  flex: 1;
+}
+
+.timepoint-confirm-copy {
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.timepoint-import {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.timepoint-import textarea {
+  min-height: 260px;
+  padding: 12px;
+  resize: vertical;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small);
+}
+
+.timepoint-import-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.timepoint-import-summary {
+  padding: 10px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+}
+
+.timepoint-export {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.timepoint-export-options,
+.timepoint-export-range {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.timepoint-export-range[style*="display: none"] {
+  display: none;
+}
+
+.timepoint-export-options select,
+.timepoint-export-range input {
+  width: 100%;
+  min-height: 40px;
+}
+
+.timepoint-export-summary {
+  padding: 12px 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m, 8px);
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  line-height: 1.45;
+}
+
+.timepoint-export-summary strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text-normal);
+}
+
+.timepoint-export-summary.is-success {
+  border-color: var(--tp-accent-border);
+}
+
+.timepoint-export-summary.is-error {
+  border-color: var(--background-modifier-error);
+  color: var(--text-error);
+}
+
+.timepoint-export-summary ul {
+  max-height: 10rem;
+  margin: 8px 0 0;
+  overflow: auto;
+}
+
+.timepoint-export-success {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.timepoint-export-success-icon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--tp-accent);
+  background: var(--tp-accent-soft);
+}
+
+.timepoint-export-success h3 {
+  margin: 0;
+}
+
+.timepoint-export-path {
+  display: block;
+  padding: 10px 12px;
+  overflow-x: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s, 6px);
+  color: var(--text-normal);
+  background: var(--background-secondary);
+  user-select: all;
+}
+
+.timepoint-export-result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.timepoint-settings-intro {
+  margin-top: -8px;
+  margin-bottom: 20px;
+}
+
+.timepoint-local-card {
+  margin: 10px 0 18px;
+  padding: 14px 16px;
+  border: 1px solid
+    color-mix(
+      in srgb,
+      var(--tp-accent, var(--interactive-accent)) 35%,
+      var(--background-modifier-border)
+    );
+  border-radius: 10px;
+  background: var(--background-secondary);
+}
+
+.timepoint-local-card p {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+}
+
+@container (min-width: 1200px) {
+  .timepoint-view .timepoint-timeline {
+    --tp-axis-x: max(84px, calc((100% - 72rem) / 2 + 84px));
+    --tp-card-start: max(124px, calc((100% - 72rem) / 2 + 124px));
+  }
+}
+
+@container (max-width: 899px) {
+  .timepoint-toolbar {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .timepoint-date-cluster {
+    flex: 1 1 auto;
+  }
+
+  .timepoint-action-cluster {
+    margin-left: auto;
+  }
+
+  .timepoint-card {
+    width: 100%;
+  }
+}
+
+@container (max-width: 720px) {
+  .timepoint-toolbar {
+    align-items: stretch;
+  }
+
+  .timepoint-date-cluster,
+  .timepoint-action-cluster {
+    width: 100%;
+  }
+
+  .timepoint-date-copy {
+    flex: 1;
+  }
+
+  .timepoint-action-cluster {
+    margin-left: 0;
+  }
+
+  .timepoint-mode-select {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .timepoint-view-status {
+    flex-direction: column;
+  }
+
+  .timepoint-diagnostic-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+@container (max-width: 559px) {
+  .timepoint-shell {
+    --tp-axis-x: 56px;
+    --tp-card-start: 84px;
+  }
+
+  .timepoint-toolbar {
+    padding: 10px;
+  }
+
+  .timepoint-date-copy {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .timepoint-weekday,
+  .timepoint-button-label,
+  .timepoint-today-button {
+    display: none;
+  }
+
+  .timepoint-date-title {
+    font-size: var(--font-ui-medium);
+  }
+
+  .timepoint-action-cluster {
+    width: 100%;
+  }
+
+  .timepoint-mode-select {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .timepoint-timeline {
+    margin-inline: 8px;
+  }
+
+  .timepoint-time-label,
+  .timepoint-time-badge {
+    font-size: 11px;
+  }
+
+  .timepoint-card {
+    padding: 10px 11px;
+  }
+
+  .timepoint-timeline.is-elastic::after,
+  .timepoint-timeline.is-realtime::after {
+    display: none;
+  }
+
+  .timepoint-empty {
+    right: 8px;
+    padding: 16px;
+  }
+}
+
+@media (max-width: 600px) {
+  .modal.timepoint-modal {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100vw;
+    max-width: none;
+    max-height: 92vh;
+    margin: 0;
+    border-radius: 14px 14px 0 0;
+  }
+
+  .timepoint-editor textarea {
+    min-height: 180px;
+  }
+
+  .timepoint-import-options,
+  .timepoint-export-options,
+  .timepoint-export-range {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (pointer: coarse) {
+  .timepoint-icon-button,
+  .timepoint-button,
+  .timepoint-mode-select,
+  .timepoint-date-input,
+  .timepoint-card .timepoint-card-action,
+  .timepoint-time-mode button,
+  .timepoint-export-options select,
+  .timepoint-export-range input {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .timepoint-card .timepoint-card-action {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .timepoint-node,
+  .timepoint-node.is-current {
+    transition: none;
+    animation: none;
+  }
+}
+
+@keyframes timepoint-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px var(--tp-accent),
+      0 0 0 3px var(--tp-accent-soft);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px var(--tp-accent),
+      0 0 0 8px var(--tp-accent-soft);
+  }
+}
+
+/* Reading View `timepoint` code blocks reuse the production timeline without
+   impersonating an Obsidian workspace leaf. */
+.timepoint-embedded {
+  --tp-axis-x: 84px;
+  --tp-card-start: 124px;
+  --tp-node-size: 14px;
+  overflow: hidden;
+  margin-block: 1em;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-l, 12px);
+  color: var(--text-normal);
+  background: var(--background-primary);
+  container-type: inline-size;
+}
+
+.timepoint-embedded-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+}
+
+.timepoint-embedded-heading {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.timepoint-embedded-mode,
+.timepoint-embedded-access {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.timepoint-embedded-access {
+  flex: none;
+}
+
+.timepoint-embedded-scroll {
+  overflow: auto;
+  max-height: min(75vh, 920px);
+  padding: 0 10px;
+}
+
+.timepoint-embedded-timeline-host {
+  min-width: 0;
+}
+
+.timepoint-embedded.is-readonly .timepoint-node:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.timepoint-embedded-config-error {
+  padding: 14px 16px;
+  border-inline-start: 3px solid var(--text-error);
+  color: var(--text-normal);
+  background: var(--background-secondary);
+}
+
+.timepoint-embedded-config-error ul {
+  margin-block: 8px 0;
+  color: var(--text-muted);
+}
+
+@container (max-width: 559px) {
+  .timepoint-embedded-scroll {
+    --tp-axis-x: 56px;
+    --tp-card-start: 84px;
+  }
+
+  .timepoint-embedded-header {
+    align-items: flex-start;
+  }
+
+  .timepoint-embedded-heading {
+    flex-direction: column;
+    gap: 2px;
+  }
+}
