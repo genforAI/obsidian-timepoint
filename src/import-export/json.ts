@@ -1,4 +1,5 @@
 import type { TimePointEntry } from "../model/types";
+import { parseSnapshotIds, sanitizeCardLayout } from "../storage/CardLayoutMetadata";
 import {
   TIMEPOINT_EXPORT_SCHEMA_VERSION,
   TIMEPOINT_RANGE_SCHEMA_VERSION,
@@ -52,6 +53,10 @@ export function exportTimePointJson(
       tags: [...entry.tags],
       ...(entry.timezone ? { timezone: entry.timezone } : {}),
       ...(entry.source ? { source: entry.source } : {}),
+      ...(entry.cardLayout ? { cardLayout: { ...entry.cardLayout } } : {}),
+      ...(entry.linkSnapshotIds?.length
+        ? { linkSnapshotIds: [...new Set(entry.linkSnapshotIds)].sort() }
+        : {}),
       createdAt: entry.createdAt,
       updatedAt: entry.updatedAt,
     })),
@@ -93,6 +98,10 @@ export function exportTimePointRangeJson(
         tags: [...entry.tags],
         ...(entry.timezone ? { timezone: entry.timezone } : {}),
         ...(entry.source ? { source: entry.source } : {}),
+        ...(entry.cardLayout ? { cardLayout: { ...entry.cardLayout } } : {}),
+        ...(entry.linkSnapshotIds?.length
+          ? { linkSnapshotIds: [...new Set(entry.linkSnapshotIds)].sort() }
+          : {}),
         createdAt: entry.createdAt,
         updatedAt: entry.updatedAt,
       })),
@@ -396,6 +405,8 @@ function normalizeJsonEntry(
 
   const safeDate = date as string;
   const safeTime = time as string;
+  const cardLayout = sanitizeCardLayout(raw.cardLayout);
+  const linkSnapshotIds = parseSnapshotIds(raw.linkSnapshotIds);
   return {
     id: id as string,
     date: safeDate,
@@ -407,6 +418,8 @@ function normalizeJsonEntry(
     source: optionalString(raw.source) ?? "import-json",
     createdAt: createdAt as string,
     updatedAt: updatedAt as string,
+    ...(cardLayout ? { cardLayout } : {}),
+    ...(linkSnapshotIds.length ? { linkSnapshotIds } : {}),
   };
 }
 

@@ -185,7 +185,11 @@ export class TimePointSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             this.timePoint.settings.appearanceMode = value as AppearanceMode;
             await this.timePoint.saveSettings();
-            this.update();
+            containerEl.removeClass(
+              "timepoint-appearance-native",
+              "timepoint-appearance-signature",
+            );
+            containerEl.addClass(`timepoint-appearance-${this.timePoint.settings.appearanceMode}`);
             this.timePoint.refreshViews();
           }),
       );
@@ -447,6 +451,27 @@ export class TimePointSettingTab extends PluginSettingTab {
     localCard.createEl("p", {
       text: t("settings.localFirstDesc"),
     });
+
+    new Setting(containerEl)
+      .setName(t("settings.externalSnapshots"))
+      .setDesc(t("settings.externalSnapshotsDesc"))
+      .addDropdown((dropdown) => {
+        dropdown
+          .addOption("dismissed", t("settings.externalAsk"))
+          .addOption("declined", t("settings.externalOff"))
+          .addOption("granted", t("settings.externalOn"))
+          .setValue(this.timePoint.externalSnapshotConsent)
+          .onChange(async (value) => {
+            if (value === "granted" && this.timePoint.externalSnapshotConsent === "dismissed") {
+              await this.timePoint.ensureExternalSnapshotConsent();
+            } else {
+              await this.timePoint.setExternalSnapshotConsent(
+                value as "dismissed" | "declined" | "granted",
+              );
+            }
+            dropdown.setValue(this.timePoint.externalSnapshotConsent);
+          });
+      });
 
     new Setting(containerEl)
       .setName(t("settings.validate"))

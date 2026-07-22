@@ -3,7 +3,7 @@ main.js
 *.map
 coverage/
 .DS_Store
-release/
+/Release/
 fixtures/output/
 
 # Local handoff evidence and design inputs are intentionally not public.

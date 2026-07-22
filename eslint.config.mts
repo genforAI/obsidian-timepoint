@@ -45,6 +45,8 @@ export default defineConfig(
     files: ["tests/**/*.ts"],
     rules: {
       "obsidianmd/no-tfile-tfolder-cast": "off",
+      "obsidianmd/no-global-this": "off",
+      "obsidianmd/prefer-window-timers": "off",
     },
   },
 );

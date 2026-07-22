@@ -134,6 +134,10 @@ export function serializeEntry(entry: TimePointEntry, eol = "\n"): string {
     updatedAt: entry.updatedAt,
     tags: normalizeTags(entry.tags),
     ...(entry.source ? { source: entry.source } : {}),
+    ...(entry.cardLayout ? { cardLayout: { ...entry.cardLayout } } : {}),
+    ...(entry.linkSnapshotIds?.length
+      ? { linkSnapshotIds: [...new Set(entry.linkSnapshotIds)].sort() }
+      : {}),
   };
   const content = entry.contentMarkdown
     .replace(/\r\n/g, "\n")
@@ -359,6 +363,8 @@ function normalizedEntryFingerprint(entry: TimePointEntry): string {
     source: entry.source ?? null,
     createdAt: entry.createdAt,
     updatedAt: entry.updatedAt,
+    cardLayout: entry.cardLayout ?? null,
+    linkSnapshotIds: [...(entry.linkSnapshotIds ?? [])].sort(),
   });
 }
 

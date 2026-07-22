@@ -21,10 +21,15 @@ import {
   selectVisibleTimelineBadgeMinutes,
 } from "../src/views/timelineDensity";
 import {
+  clampViewportOffset,
+  isTimelineZoomWheel,
   normalizeTimelineZoom,
   resolveZoomedScrollTop,
+  shouldRestoreStoredViewport,
   stepTimelineZoom,
+  timelineZoomFromWheel,
 } from "../src/views/timelineNavigation";
+import { LatestAsyncQueue } from "../src/views/latestAsyncQueue";
 
 describe("smart card display", () => {
   it("shows short smart notes fully and collapses long smart notes", () => {
@@ -217,6 +222,41 @@ describe("adaptive timeline density", () => {
 });
 
 describe("timeline pan and zoom", () => {
+  it("serializes refreshes and coalesces a burst to the newest request", async () => {
+    const releases: Array<() => void> = [];
+    const started: number[] = [];
+    let concurrent = 0;
+    let maximumConcurrent = 0;
+    const queue = new LatestAsyncQueue<number>(async (value) => {
+      started.push(value);
+      concurrent += 1;
+      maximumConcurrent = Math.max(maximumConcurrent, concurrent);
+      await new Promise<void>((resolve) => releases.push(resolve));
+      concurrent -= 1;
+    });
+
+    const first = queue.request(1);
+    const second = queue.request(2);
+    const third = queue.request(3);
+    expect(queue.active).toBe(true);
+    expect(started).toEqual([1]);
+    releases.shift()?.();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(started).toEqual([1, 3]);
+    releases.shift()?.();
+    await Promise.all([first, second, third]);
+    expect(maximumConcurrent).toBe(1);
+    expect(queue.active).toBe(false);
+  });
+
+  it("restores a saved centre only when the date or layout mode changes", () => {
+    expect(shouldRestoreStoredViewport("", "2026-07-19:elastic")).toBe(true);
+    expect(shouldRestoreStoredViewport("2026-07-19:elastic", "2026-07-19:elastic")).toBe(false);
+    expect(shouldRestoreStoredViewport("2026-07-19:elastic", "2026-07-19:realtime")).toBe(true);
+    expect(shouldRestoreStoredViewport("2026-07-19:elastic", "2026-07-20:elastic")).toBe(true);
+  });
+
   it("clamps and steps the runtime zoom without persisting it", () => {
     expect(normalizeTimelineZoom(Number.NaN)).toBe(1);
     expect(normalizeTimelineZoom(0.1)).toBe(0.5);
@@ -225,10 +265,28 @@ describe("timeline pan and zoom", () => {
     expect(stepTimelineZoom(0.5, -1)).toBe(0.5);
   });
 
+  it("supports Command/Ctrl wheel deltas from trackpads, mice, and page devices", () => {
+    expect(isTimelineZoomWheel(true, false)).toBe(true);
+    expect(isTimelineZoomWheel(false, true)).toBe(true);
+    expect(isTimelineZoomWheel(false, false)).toBe(false);
+    expect(timelineZoomFromWheel(1, -50, 0, 800)).toBeGreaterThan(1);
+    expect(timelineZoomFromWheel(1, 3, 1, 800)).toBeLessThan(1);
+    expect(timelineZoomFromWheel(1, -1, 2, 800)).toBeLessThanOrEqual(3);
+    expect(timelineZoomFromWheel(3, -100, 0, 800)).toBe(3);
+    expect(timelineZoomFromWheel(0.5, 100, 0, 800)).toBe(0.5);
+  });
+
   it("keeps the relative viewport centre stable after zoom", () => {
     expect(resolveZoomedScrollTop(600, 2_000, 800, 4_000, 800)).toBe(1_600);
     expect(resolveZoomedScrollTop(0, 600, 800, 1_200, 800)).toBe(0);
     expect(resolveZoomedScrollTop(900, 1_200, 300, 600, 300)).toBe(300);
+  });
+
+  it("keeps an exact in-place viewport offset within rebuilt bounds", () => {
+    expect(clampViewportOffset(2_400, 8_000, 900)).toBe(2_400);
+    expect(clampViewportOffset(9_000, 8_000, 900)).toBe(7_100);
+    expect(clampViewportOffset(-20, 8_000, 900)).toBe(0);
+    expect(clampViewportOffset(Number.NaN, 8_000, 900)).toBe(0);
   });
 });
 

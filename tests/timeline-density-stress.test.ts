@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { calculateRealtimeTimelineLayout } from "../src/layout";
+import { calculateElasticTimelineLayout, calculateRealtimeTimelineLayout } from "../src/layout";
+import {
+  avoidManualCardObstacles,
+  resolveStoredCardGeometry,
+} from "../src/layout/CanvasCardLayout";
 import { resolveTimelineDensity } from "../src/views/timelineDensity";
 
 function repeatMinute(minute: number, count: number): number[] {
@@ -26,6 +30,62 @@ function assertColumnsDoNotOverlap(
 }
 
 describe("adaptive density stress cases", () => {
+  it("keeps automatic cards locally compact around 100 manual obstacles", () => {
+    const manualCount = 100;
+    const automaticCount = 150;
+    const input = [
+      ...Array.from({ length: manualCount }, (_, index) => ({
+        id: `manual-${index.toString().padStart(3, "0")}`,
+        minuteOfDay: 570,
+        measuredHeight: 64,
+        manual: true,
+      })),
+      ...Array.from({ length: automaticCount }, (_, index) => ({
+        id: `automatic-${index.toString().padStart(3, "0")}`,
+        minuteOfDay: 360 + index * 7,
+        measuredHeight: 64,
+      })),
+    ];
+    const result = calculateElasticTimelineLayout(input, {
+      minimumHeight: 600,
+      topPadding: 36,
+      bottomPadding: 44,
+      cardGap: 7,
+    });
+    const bounds = {
+      left: 0,
+      top: result.axisTop,
+      width: 1_000,
+      height: result.axisBottom - result.axisTop,
+    };
+    const manualRects = Array.from({ length: manualCount }, (_, index) =>
+      resolveStoredCardGeometry(
+        {
+          schemaVersion: 1,
+          x: 0.16 + (index % 4) * 0.22,
+          y: 0.08 + (Math.floor(index / 4) % 12) * 0.075,
+          width: index % 3 === 0 ? 0.32 : 0.24,
+          height: index % 4 === 0 ? 168 : 96,
+          updatedAt: "2026-07-21T12:00:00.000Z",
+        },
+        bounds,
+        0.5,
+      ),
+    );
+    const automaticRects = result.entries
+      .filter((entry) => entry.id.startsWith("automatic-"))
+      .map((entry) => ({ x: 0, y: entry.cardY, width: bounds.width, height: entry.cardHeight }));
+    const resolved = avoidManualCardObstacles(automaticRects, manualRects, bounds, 7, 24).sort(
+      (left, right) => left.y - right.y,
+    );
+    const maximumGap = resolved.slice(1).reduce((maximum, card, index) => {
+      const previous = resolved[index];
+      return Math.max(maximum, card.y - ((previous?.y ?? 0) + (previous?.height ?? 0)));
+    }, 0);
+
+    expect(maximumGap).toBeLessThanOrEqual(200);
+  });
+
   it("keeps the 39-entry clustered fixture within four lanes at 720 px", () => {
     const minutes = [
       405,

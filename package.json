@@ -1,20 +1,20 @@
 {
   "name": "timepoint-obsidian-plugin",
-  "version": "0.5.0-beta.1",
+  "version": "0.7.0-beta.1",
   "private": true,
   "description": "A local-first daily timeline plugin for Obsidian.",
   "author": {
     "name": "J. Hall",
-    "url": "https://github.com/GITHUB_OWNER"
+    "url": "https://github.com/genforAI"
   },
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/GITHUB_OWNER/obsidian-timepoint.git"
+    "url": "git+https://github.com/genforAI/obsidian-timepoint.git"
   },
-  "homepage": "https://github.com/GITHUB_OWNER/obsidian-timepoint#readme",
+  "homepage": "https://github.com/genforAI/obsidian-timepoint#readme",
   "bugs": {
-    "url": "https://github.com/GITHUB_OWNER/obsidian-timepoint/issues"
+    "url": "https://github.com/genforAI/obsidian-timepoint/issues"
   },
   "keywords": [
     "obsidian",
@@ -31,9 +31,12 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:stress": "vitest run tests/comprehensive-stress.test.ts tests/timeline-density-stress.test.ts tests/canvasInteraction.test.ts tests/canvasState.test.ts tests/externalSnapshots.test.ts tests/relations.test.ts tests/exportService.test.ts tests/storageMutations.test.ts",
     "format": "prettier --write src tests scripts docs .github README.md CHANGELOG.md SECURITY.md CONTRIBUTING.md styles.css manifest.json versions.json package.json esbuild.config.mjs eslint.config.mts",
     "format:check": "prettier --check src tests scripts docs .github README.md CHANGELOG.md SECURITY.md CONTRIBUTING.md styles.css manifest.json versions.json package.json esbuild.config.mjs eslint.config.mts",
     "audit:high": "npm audit --audit-level=high",
+    "fixture:runtime": "node scripts/generate-runtime-stress-fixture.mjs",
+    "release:stage": "npm run build && npm run smoke && node scripts/stage-release.mjs",
     "release:validate": "node scripts/validate-release.mjs",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build && npm run smoke && npm run audit:high"
   },

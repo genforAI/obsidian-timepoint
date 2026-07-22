@@ -72,6 +72,36 @@ describe("layout input normalization", () => {
 });
 
 describe("elastic timeline", () => {
+  it("keeps manual cards out of the automatic collision flow", () => {
+    const manual = Array.from({ length: 96 }, (_, index) => ({
+      id: `manual-${index.toString().padStart(3, "0")}`,
+      minuteOfDay: 570,
+      measuredHeight: 168,
+      manual: true,
+    }));
+    const automatic = [
+      { id: "automatic-a", minuteOfDay: 560, measuredHeight: 48 },
+      { id: "automatic-b", minuteOfDay: 570, measuredHeight: 48 },
+      { id: "automatic-c", minuteOfDay: 580, measuredHeight: 48 },
+    ];
+    const result = calculateElasticTimelineLayout([...manual, ...automatic], {
+      minimumHeight: 960,
+      topPadding: 36,
+      bottomPadding: 44,
+      cardGap: 7,
+    });
+
+    expect(result.totalHeight).toBe(960);
+    expect(result.entries).toHaveLength(99);
+    expect(
+      new Set(
+        result.entries
+          .filter((entry) => entry.id.startsWith("manual-"))
+          .map((entry) => entry.nodeY),
+      ).size,
+    ).toBe(1);
+  });
+
   it("keeps dense measured cards ordered and non-overlapping", () => {
     const cardGap = 10;
     const result = calculateElasticTimelineLayout(
@@ -186,6 +216,30 @@ describe("elastic timeline", () => {
 });
 
 describe("real-time timeline", () => {
+  it("does not let manual cards inflate real-time lanes or canvas height", () => {
+    const input = [
+      ...Array.from({ length: 96 }, (_, index) => ({
+        id: `manual-${index.toString().padStart(3, "0")}`,
+        minuteOfDay: 570,
+        measuredHeight: 168,
+        manual: true,
+      })),
+      { id: "automatic-a", minuteOfDay: 570, measuredHeight: 48 },
+      { id: "automatic-b", minuteOfDay: 570, measuredHeight: 48 },
+    ];
+    const result = calculateRealtimeTimelineLayout(input, {
+      minimumHeight: 960,
+      topPadding: 36,
+      bottomPadding: 44,
+      cardGap: 7,
+      maximumColumns: 4,
+    });
+
+    expect(result.totalHeight).toBe(960);
+    expect(result.columnCount).toBe(2);
+    expect(new Set(result.entries.map((entry) => entry.nodeY)).size).toBe(1);
+  });
+
   it("keeps node positions exactly proportional to time", () => {
     const result = calculateRealtimeTimelineLayout(
       [

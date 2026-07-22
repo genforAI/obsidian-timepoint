@@ -110,8 +110,13 @@ export function calculateRealtimeTimelineLayout(
     };
   });
 
-  const columnCount = assignCollisionColumns(candidates, options.cardGap, options.maximumColumns);
-  const packedBottom = candidates.reduce(
+  const automaticCandidates = candidates.filter((candidate) => !candidate.manual);
+  const columnCount = assignCollisionColumns(
+    automaticCandidates,
+    options.cardGap,
+    options.maximumColumns,
+  );
+  const packedBottom = automaticCandidates.reduce(
     (maximum, entry) => Math.max(maximum, entry.cardY + entry.cardHeight),
     axisBottom,
   );

@@ -6,6 +6,7 @@ import {
   type TimePointEntry,
 } from "../model/types";
 import { isValidDateString, isValidStoredTime, timeToMinuteOfDay } from "../utils/time";
+import { parseSnapshotIds, sanitizeCardLayout } from "./CardLayoutMetadata";
 
 const ENTRY_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]{0,127}$/;
 const FRONTMATTER_PATTERN = /^(?:\uFEFF)?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
@@ -49,6 +50,8 @@ interface EntryMetadata {
   updatedAt?: string;
   tags?: unknown;
   source?: string;
+  cardLayout?: unknown;
+  linkSnapshotIds?: unknown;
 }
 
 const ENTRY_METADATA_FIELDS = new Set<keyof EntryMetadata>([
@@ -61,6 +64,8 @@ const ENTRY_METADATA_FIELDS = new Set<keyof EntryMetadata>([
   "updatedAt",
   "tags",
   "source",
+  "cardLayout",
+  "linkSnapshotIds",
 ]);
 
 export interface EntryMarkerScanResult {
@@ -488,6 +493,18 @@ function parseEntryBlock(
   );
   const contentMarkdown = stripScaffolding(rawBlockContent, headingMatch, metadataMatch);
   const tags = parseTags(metadata.tags, contentMarkdown, block, diagnostics);
+  const cardLayout = sanitizeCardLayout(metadata.cardLayout);
+  if (metadata.cardLayout !== undefined && !cardLayout) {
+    diagnostics.push(
+      blockDiagnostic(
+        block,
+        "warning",
+        "INVALID_CARD_LAYOUT",
+        `Entry ${block.id} has invalid portable card layout metadata; automatic layout was used.`,
+      ),
+    );
+  }
+  const linkSnapshotIds = parseSnapshotIds(metadata.linkSnapshotIds);
 
   return {
     id: block.id,
@@ -506,6 +523,8 @@ function parseEntryBlock(
       : {}),
     createdAt,
     updatedAt,
+    ...(cardLayout ? { cardLayout } : {}),
+    ...(linkSnapshotIds.length ? { linkSnapshotIds } : {}),
   };
 }
 

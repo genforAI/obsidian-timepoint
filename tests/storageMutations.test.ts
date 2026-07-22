@@ -1,11 +1,13 @@
 import type { TAbstractFile, TFile, Vault } from "obsidian";
 import { describe, expect, it } from "vitest";
 import { DayFileRepository, normalizeStorageFolder } from "../src/storage/DayFileRepository";
+import { createCardLayout } from "../src/storage/CardLayoutMetadata";
 import { planLegacyDayRepair } from "../src/storage/LegacyRepair";
 import {
   parseStandaloneEntry,
   serializeDayIndex,
   serializeStandaloneEntry,
+  updateStandaloneCardLayoutMarkdown,
   updateStandaloneEntryMarkdown,
 } from "../src/storage/StandaloneEntryFile";
 import { parseDayFile } from "../src/storage/TimePointParser";
@@ -239,6 +241,75 @@ describe("pure conflict-conscious mutations", () => {
 });
 
 describe("DayFileRepository", () => {
+  it("classifies internal viewport writes without hiding external index edits", async () => {
+    const memoryVault = new MemoryVault();
+    const repository = new DayFileRepository(memoryVault as unknown as Vault, {
+      getStorageFolder: () => "TimePoint/Days",
+      getTimezone: () => "UTC",
+      trashFile: (file) => memoryVault.trash(file),
+    });
+    const storedEntry = entry();
+    await repository.addEntry(storedEntry);
+    const indexPath = repository.getDayIndexPath("2026-07-18");
+    const indexFile = memoryVault.getAbstractFileByPath(indexPath) as TFile;
+
+    await repository.updateDayViewState("2026-07-18", (state) => ({
+      ...state,
+      modes: {
+        ...state.modes,
+        elastic: { zoom: 0.75, centerX: 0.5, centerY: 0.35 },
+      },
+    }));
+    await expect(repository.classifyManagedViewStateChange(indexFile)).resolves.toBe(
+      "viewport-only",
+    );
+
+    await repository.updateDayViewState("2026-07-18", (state) => ({
+      ...state,
+      stackOrder: [storedEntry.id],
+    }));
+    await expect(repository.classifyManagedViewStateChange(indexFile)).resolves.toBe(
+      "render-affecting",
+    );
+
+    await repository.updateCardLayout({
+      date: storedEntry.date,
+      entryId: storedEntry.id,
+      before: null,
+      after: {
+        schemaVersion: 1,
+        x: 0.62,
+        y: 0.38,
+        width: 0.44,
+        height: 180,
+        updatedAt: "2026-07-21T16:00:00.000Z",
+      },
+      reason: "move",
+    });
+    const entryPath = repository.getEntrySourcePath(storedEntry);
+    const entryFile = memoryVault.getAbstractFileByPath(entryPath) as TFile;
+    await expect(repository.classifyManagedViewStateChange(entryFile)).resolves.toBe(
+      "render-affecting",
+    );
+
+    memoryVault.seedFile(
+      entryPath,
+      `${memoryVault.content(entryPath) ?? ""}\nExternal user edit\n`,
+    );
+    await expect(
+      repository.classifyManagedViewStateChange(
+        memoryVault.getAbstractFileByPath(entryPath) as TFile,
+      ),
+    ).resolves.toBe("none");
+
+    memoryVault.seedFile(
+      indexPath,
+      `${memoryVault.content(indexPath) ?? ""}\nExternal user section\n`,
+    );
+    const externallyEdited = memoryVault.getAbstractFileByPath(indexPath) as TFile;
+    await expect(repository.classifyManagedViewStateChange(externallyEdited)).resolves.toBe("none");
+  });
+
   it("stores each event as a Markdown note and maintains a portable day index", async () => {
     const memoryVault = new MemoryVault();
     const repository = new DayFileRepository(memoryVault as unknown as Vault, {
@@ -357,6 +428,91 @@ describe("DayFileRepository", () => {
       ),
     ).rejects.toThrow(/appears in 2 separate notes/);
   });
+
+  it("persists layout-only YAML and preserves daily canvas state through index rebuilds", async () => {
+    const memoryVault = new MemoryVault();
+    const repository = new DayFileRepository(memoryVault as unknown as Vault, {
+      getStorageFolder: () => "TimePoint/Days",
+      trashFile: (file) => memoryVault.trash(file),
+    });
+    const original = entry({
+      contentMarkdown: "Exact body bytes\n\n![[image.png]]",
+      tags: ["business"],
+    });
+    await repository.addEntry(original);
+    const sourcePath = repository.getEntrySourcePath(
+      (await repository.loadDay(original.date)).entries[0] ?? original,
+    );
+    const before = memoryVault.content(sourcePath) ?? "";
+    const layout = createCardLayout({
+      x: 0.72,
+      y: 0.31,
+      width: 0.48,
+      height: 212,
+      updatedAt: "2026-07-21T12:00:00.000Z",
+    });
+
+    await repository.updateCardLayout({
+      date: original.date,
+      entryId: original.id,
+      before: null,
+      after: layout,
+      reason: "move",
+    });
+    const after = memoryVault.content(sourcePath) ?? "";
+    expect(parseStandaloneEntry(after).entry).toMatchObject({
+      time: original.time,
+      contentMarkdown: original.contentMarkdown,
+      tags: original.tags,
+      createdAt: original.createdAt,
+      updatedAt: original.updatedAt,
+      cardLayout: layout,
+    });
+    expect(after.slice(after.indexOf("---\n\n") + 4)).toBe(
+      before.slice(before.indexOf("---\n\n") + 4),
+    );
+    expect(updateStandaloneCardLayoutMarkdown(after, null)).toBe(before);
+    await expect(
+      repository.updateCardLayout({
+        date: original.date,
+        entryId: original.id,
+        before: null,
+        after: layout,
+        reason: "resize",
+      }),
+    ).rejects.toThrow(/changed externally/i);
+
+    await repository.updateDayViewState(original.date, (state) => ({
+      ...state,
+      relationsEnabled: true,
+      stackOrder: [original.id],
+      modes: {
+        ...state.modes,
+        elastic: { zoom: 2, centerX: 0.7, centerY: 0.4 },
+      },
+    }));
+    await repository.addEntry(
+      entry({ id: "tp-entry-b2", time: "09:00", minuteOfDay: 540, contentMarkdown: "Second" }),
+    );
+    const rebuilt = await repository.loadDay(original.date);
+    expect(rebuilt.viewState).toMatchObject({
+      relationsEnabled: true,
+      stackOrder: [original.id],
+      modes: { elastic: { zoom: 2, centerX: 0.7, centerY: 0.4 } },
+    });
+    expect(memoryVault.content(repository.getDayIndexPath(original.date))).toContain(
+      "timepoint:view-state",
+    );
+
+    await repository.updateCardLayout({
+      date: original.date,
+      entryId: original.id,
+      before: layout,
+      after: null,
+      reason: "reset",
+    });
+    expect((await repository.loadDay(original.date)).entries[0]?.cardLayout).toBeUndefined();
+  });
 });
 
 describe("standalone entry files and conservative legacy repair", () => {
@@ -406,6 +562,17 @@ class MemoryVault {
     return this.files.get(path)?.file ?? this.folders.get(path) ?? null;
   }
 
+  getFolderByPath(path: string): (TAbstractFile & { children: TAbstractFile[] }) | null {
+    const folder = this.folders.get(path);
+    if (!folder) return null;
+    return {
+      ...folder,
+      children: [...this.files.values()]
+        .map((record) => record.file)
+        .filter((file) => file.parent?.path === path),
+    };
+  }
+
   async createFolder(path: string): Promise<void> {
     if (this.files.has(path) || this.folders.has(path)) throw new Error("already exists");
     this.folders.set(path, { path, name: path.split("/").at(-1) ?? path } as TAbstractFile);
@@ -427,12 +594,6 @@ class MemoryVault {
 
   async cachedRead(file: TFile): Promise<string> {
     return this.read(file);
-  }
-
-  getMarkdownFiles(): TFile[] {
-    return [...this.files.values()]
-      .map((record) => record.file)
-      .filter((file) => file.extension === "md");
   }
 
   async process(file: TFile, callback: (data: string) => string): Promise<string> {

@@ -13,7 +13,8 @@ import { isValidDate, validateEntry } from "./validation";
 
 /**
  * Produces a portable day file using the same visible-heading + hidden-metadata
- * shape as TimePoint storage. It intentionally stores no pixel/layout state.
+ * shape as TimePoint storage. Optional display metadata is portable, while the
+ * Markdown body and wall-clock time remain the authoritative event data.
  */
 export function exportTimePointMarkdown(
   entries: readonly TimePointEntry[],
@@ -54,6 +55,10 @@ export function exportTimePointMarkdown(
       updatedAt: entry.updatedAt,
       tags: [...entry.tags],
       ...(entry.source ? { source: entry.source } : {}),
+      ...(entry.cardLayout ? { cardLayout: { ...entry.cardLayout } } : {}),
+      ...(entry.linkSnapshotIds?.length
+        ? { linkSnapshotIds: [...new Set(entry.linkSnapshotIds)].sort() }
+        : {}),
     };
     const content = entry.contentMarkdown.replace(/\s+$/u, "");
     return [

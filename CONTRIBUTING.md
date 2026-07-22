@@ -28,6 +28,19 @@ test window unless they explicitly authorize UI control.
 - Build the complete mutation or export plan before writing its first file.
 - Never turn partial output into a success notice.
 - Add round-trip and conflict tests for every import, export, repair, or migration change.
+- Keep event `time`, body, tags, and business `updatedAt` independent from card layout mutations.
+- Use metadata-aware Obsidian writers for YAML and preserve the managed daily view-state block
+  during index rebuilds.
+
+## Network and snapshot rules
+
+- Core recording and local relationships must work without network access.
+- Do not request an external target before explicit user consent. Use Obsidian `requestUrl`, not
+  browser `fetch`, Electron, Node networking, login cookies, or a proxy backend.
+- Preserve public-HTTPS validation, request/concurrency/size limits, inert metadata parsing,
+  PNG/JPEG/WebP MIME plus magic-byte checks, SVG rejection, and marker-last cache commits.
+- Never store scripts or full-page HTML. Add malicious-input, timeout, cache-hit, concurrency, and
+  offline-retry tests for every snapshot change.
 
 ## UI rules
 
@@ -37,6 +50,8 @@ test window unless they explicitly authorize UI control.
 - Keep both appearance modes, light/dark themes, narrow splits, 200% zoom, keyboard operation, and
   44 px touch targets in mind.
 - Keep full-document editing in a native `MarkdownView`; timeline cards remain bounded previews.
+- Treat card drag/resize as display-only. Keep links and buttons interactive, Hand/Space pan
+  predictable, and keyboard cancel/undo available.
 - Add both English and Simplified Chinese strings for every new translation key.
 
 ## Pull requests

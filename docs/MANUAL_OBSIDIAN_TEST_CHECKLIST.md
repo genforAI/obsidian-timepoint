@@ -1,4 +1,4 @@
-# TimePoint 0.5.0-beta.1 manual Obsidian checklist
+# TimePoint 0.7.0-beta.1 manual Obsidian checklist
 
 Use a disposable Vault and the exact three candidate runtime files. Record Obsidian, OS, theme,
 scaling, version/hash, and synthetic fixture revision. Never include personal notes in evidence.
@@ -14,7 +14,7 @@ scaling, version/hash, and synthetic fixture revision. Never include personal no
 ## Install and entry points
 
 - [ ] Release assets are exactly `manifest.json`, `main.js`, and `styles.css` for
-      `0.5.0-beta.1`; the tag has no `v` prefix.
+      `0.7.0-beta.1`; the tag has no `v` prefix.
 - [ ] Plugin enables without a console exception and shows one non-blocking ready notice only once.
 - [ ] Ribbon and **Open timeline** command open the view.
 - [ ] The Settings **Open timeline** button opens the view.
@@ -40,8 +40,35 @@ scaling, version/hash, and synthetic fixture revision. Never include personal no
       with no stale horizontal blank region.
 - [ ] Dense proportional badges never overlap; suppressed exact times appear on node hover/focus.
 - [ ] Hand mode drags vertically and horizontally without creating or opening an event.
-- [ ] 50–300% zoom and 100% reset preserve the relative viewport centre and never change Markdown
-      or timestamps.
+- [ ] Space temporarily enables Hand behavior; releasing it restores the selected tool.
+- [ ] 50–300% button zoom preserves the viewport centre; Command/Ctrl+wheel anchors the pointer;
+      Fit and Now are correct and none changes event content or timestamps.
+- [ ] Wide minimap shows nodes, event/reference rectangles, and current viewport; click and frame
+      drag navigate correctly. Below 720 px it opens from a floating overlay button without
+      overwriting the saved wide-screen preference.
+
+## Card canvas and persistence
+
+- [ ] Card single-click selects and persistently raises it; double-click opens the native note.
+- [ ] Card drag changes only visual position. Eight edge/corner handles resize within limits.
+- [ ] Links/buttons inside cards retain their native action and never start a card drag.
+- [ ] Mouse movement below 6 px and coarse movement below 10 px remains a click.
+- [ ] Axis-near drag pans after the threshold; an axis-near click still creates. Ordinary blank
+      drag pans, while ordinary blank click clears selection.
+- [ ] Escape, pointer-capture loss, and interrupted gestures restore the starting geometry and
+      produce no layout write.
+- [ ] Command/Ctrl+Z and Command/Ctrl+Shift+Z undo/redo layout while the timeline is focused.
+- [ ] Reload, date switch, mode switch, index rebuild, and external file refresh preserve final
+      geometry, stacking, viewport, minimap state, and relationship toggle.
+- [ ] Drag/resize does not change `time`, body bytes, tags, `createdAt`, or business `updatedAt`.
+- [ ] Manual cards may intentionally overlap; automatic cards avoid them with visible spacing.
+- [ ] After move/resize, overlapping cards form an opaque, theme-correct deck: only the top
+      Markdown is visible, covered cards remain quiet clipped edges, and the `+N` chooser can raise
+      or open every covered note.
+- [ ] Narrow leaves temporarily clamp card geometry and restore the wider preference when widened.
+- [ ] Embedded timelines render saved geometry but expose no move/resize persistence controls.
+- [ ] Same-time events use distinct quiet path ports; only the selected path is emphasized and no
+      connector blocks card interaction.
 
 ## Native records and previews
 
@@ -64,6 +91,26 @@ scaling, version/hash, and synthetic fixture revision. Never include personal no
 - [ ] Unsupported locales fall back to English.
 - [ ] Editable and read-only embedded blocks behave independently; invalid config stays local.
 
+## Relationship view and optional network
+
+- [ ] Relationship view defaults off and is remembered independently for each date.
+- [ ] Same-day TimePoint links connect the existing event card; cross-day links show a day entry;
+      ordinary local Markdown opens through Obsidian; duplicate targets and cycles stay bounded.
+- [ ] Only direct links appear initially. Explicit expansion never exceeds 50 reference cards or
+      100 edges.
+- [ ] Reference cards move, resize, stack, reload, and reset without changing referenced notes.
+- [ ] First snapshot enable explains target, cache, and privacy before any request. Decline keeps
+      local relations working and leaves URL placeholders inert.
+- [ ] With explicit consent, only public HTTPS targets are requested. Credential URLs, HTTP,
+      localhost, `.local`, IP literals, private/reserved targets, SVG, bad MIME/magic, responses
+      above 512 KiB HTML/2 MiB image, and late results are rejected.
+- [ ] Two simultaneous requests maximum and per-host pacing are observable with synthetic targets;
+      duplicate references share one request and merge source associations.
+- [ ] A complete cache hit makes no request; explicit Refresh does. Offline failure can retry and
+      never creates a successful event association.
+- [ ] Cache contains only metadata plus optional WebP, with `snapshot.md` committed last; no script
+      or full page HTML is stored.
+
 ## Export and re-import
 
 - [ ] Day and inclusive range scopes show exact day/event/empty/conflict/error preview counts.
@@ -74,7 +121,10 @@ scaling, version/hash, and synthetic fixture revision. Never include personal no
 - [ ] Day and range JSON round-trip through Import.
 - [ ] CSV preserves multiple dates, multiline Markdown, quotes, commas, tags, and IDs.
 - [ ] Portable folder contains ordinary event files, day indexes, and root guide; copy it to a
-      second test Vault and open the indexes.
+      second test Vault and open the indexes. Confirm layout/view/relationship state and used
+      completed snapshots survive.
+- [ ] Missing or changed associated snapshots and changed daily view state invalidate preview and
+      block the whole portable write.
 - [ ] Success reports exact file count/path; Markdown/portable Open works; path copy works; content
       copy appears only for single files no larger than 2 MiB.
 - [ ] Existing exports receive a suffix and are not overwritten.

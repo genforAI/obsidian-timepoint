@@ -74,6 +74,31 @@ describe("inclusive export ranges", () => {
     expect(parseTimePointCsv(csv)).toMatchObject({ ok: true, issues: [], entries });
   });
 
+  it("preserves optional card geometry and snapshot associations in every exchange format", () => {
+    const snapshotId = "a".repeat(64);
+    const withLayout: TimePointEntry = {
+      ...entry("2028-02-29", "08:05", "tp-layout"),
+      cardLayout: {
+        schemaVersion: 1,
+        x: 0.812345,
+        y: 0.234567,
+        width: 0.42,
+        height: 214,
+        updatedAt: "2028-02-29T10:00:00.000Z",
+      },
+      linkSnapshotIds: [snapshotId],
+    };
+    const scope = { startDate: "2028-02-29", endDate: "2028-02-29" };
+
+    for (const parsed of [
+      parseTimePointJson(exportTimePointRangeJson([withLayout], scope)),
+      parseTimePointMarkdown(exportTimePointRangeMarkdown([withLayout], scope)),
+      parseTimePointCsv(exportTimePointCsv([withLayout])),
+    ]) {
+      expect(parsed).toMatchObject({ ok: true, issues: [], entries: [withLayout] });
+    }
+  });
+
   it("round-trips an empty range and detects truncated Markdown", () => {
     const scope = { startDate: "2028-02-28", endDate: "2028-03-01" };
     const empty = exportTimePointRangeMarkdown([], scope);

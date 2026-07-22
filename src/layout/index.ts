@@ -1,6 +1,7 @@
 export * from "./layoutTypes";
 export * from "./ElasticTimelineLayout";
 export * from "./RealtimeTimelineLayout";
+export * from "./CanvasCardLayout";
 
 import { calculateElasticTimelineLayout } from "./ElasticTimelineLayout";
 import { calculateRealtimeTimelineLayout } from "./RealtimeTimelineLayout";

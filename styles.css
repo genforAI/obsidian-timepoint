@@ -346,7 +346,7 @@
 .timepoint-timeline {
   position: relative;
   width: auto;
-  min-width: var(--tp-timeline-min-width, 310px);
+  min-width: max(var(--tp-timeline-min-width, 310px), var(--tp-relation-min-width, 310px));
   height: var(--tp-timeline-height, auto);
   margin: 8px 16px 40px;
   cursor: default;
@@ -507,18 +507,33 @@
   display: block;
 }
 
-.timepoint-connector {
+.timepoint-connector-layer {
   position: absolute;
-  z-index: 3;
-  top: var(--tp-connector-top, 0);
-  left: var(--tp-connector-left, calc(var(--tp-axis-x) + 8px));
-  width: var(--tp-connector-width, 0);
-  height: 1px;
-  background: var(--background-modifier-border-hover);
-  opacity: 0.72;
-  transform: rotate(var(--tp-connector-angle, 0deg));
-  transform-origin: left center;
+  z-index: 2;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
   pointer-events: none;
+}
+
+.timepoint-connector-path {
+  fill: none;
+  stroke: var(--background-modifier-border-hover);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.25;
+  opacity: 0.46;
+  transition:
+    stroke 120ms ease,
+    opacity 120ms ease,
+    stroke-width 120ms ease;
+}
+
+.timepoint-connector-path.is-selected {
+  stroke: var(--tp-accent);
+  stroke-width: 2;
+  opacity: 0.92;
 }
 
 .timepoint-card-layer {
@@ -527,24 +542,431 @@
   pointer-events: none;
 }
 
+.timepoint-timeline.has-relations .timepoint-card-layer {
+  right: auto;
+  width: var(--tp-event-layer-width, calc(100% - var(--tp-card-start)));
+}
+
+.timepoint-reference-layer {
+  position: absolute;
+  inset: 0 16px 0 var(--tp-reference-left, 70%);
+  pointer-events: none;
+}
+
 .timepoint-card {
+  --tp-current-card-background: var(--tp-card-background);
   position: absolute;
   box-sizing: border-box;
-  z-index: 6;
+  z-index: var(--tp-card-z, 6);
   top: var(--tp-card-y, 0);
   left: var(--tp-column-x, 0);
   width: var(--tp-column-width, min(100%, 64rem));
   min-width: 0;
+  min-height: var(--tp-card-min-height, 0);
   padding: 11px 13px 12px;
   overflow: hidden;
   border: 1px solid var(--background-modifier-border);
   border-radius: 12px;
   color: var(--text-normal);
-  background: var(--tp-card-background);
+  background: var(--tp-current-card-background);
   box-shadow: var(--tp-card-shadow);
+  isolation: isolate;
+  contain: layout style;
   cursor: default;
   user-select: text;
   pointer-events: auto;
+}
+
+.timepoint-card.is-selected {
+  --tp-current-card-background: var(--background-primary);
+  border-color: var(--tp-accent);
+  box-shadow: 0 0 0 2px var(--tp-accent-soft);
+}
+
+.timepoint-card.has-manual-layout {
+  height: var(--tp-card-height, auto);
+  min-height: 0;
+}
+
+.timepoint-card.has-manual-layout .timepoint-markdown {
+  max-height: min(var(--tp-markdown-max-height, 100%), calc(100% - 58px));
+  overflow: hidden;
+}
+
+.timepoint-markdown {
+  max-height: var(--tp-markdown-max-height, none);
+}
+
+.timepoint-card.is-layout-gesture {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.timepoint-card.is-layout-gesture:not(.is-moving-layout-gesture) {
+  will-change: top, left, width, height;
+}
+
+.timepoint-card.is-layout-gesture.is-move-primed {
+  will-change: transform;
+}
+
+.timepoint-card.is-moving-layout-gesture {
+  transform: translate3d(var(--tp-gesture-x, 0), var(--tp-gesture-y, 0), 0);
+  transform-origin: 0 0;
+  backface-visibility: hidden;
+  will-change: transform;
+}
+
+.timepoint-card.is-layout-gesture .timepoint-markdown {
+  pointer-events: none;
+}
+
+.timepoint-resize-handle {
+  position: absolute;
+  z-index: 20;
+  opacity: 0;
+  pointer-events: auto;
+  touch-action: none;
+  transition: opacity 100ms ease;
+}
+
+.timepoint-resize-handle::after {
+  position: absolute;
+  border-radius: 999px;
+  background: var(--tp-accent);
+  content: "";
+  opacity: 0.72;
+}
+
+.timepoint-card:hover .timepoint-resize-handle,
+.timepoint-card:focus-within .timepoint-resize-handle,
+.timepoint-card.is-selected .timepoint-resize-handle {
+  opacity: 1;
+}
+
+.timepoint-resize-handle.is-n,
+.timepoint-resize-handle.is-s {
+  right: 14px;
+  left: 14px;
+  height: 10px;
+  cursor: ns-resize;
+}
+
+.timepoint-resize-handle.is-n {
+  top: 0;
+}
+
+.timepoint-resize-handle.is-s {
+  bottom: 0;
+}
+
+.timepoint-resize-handle.is-n::after,
+.timepoint-resize-handle.is-s::after {
+  left: 50%;
+  width: 28px;
+  height: 2px;
+  transform: translateX(-50%);
+}
+
+.timepoint-resize-handle.is-n::after {
+  top: 2px;
+}
+
+.timepoint-resize-handle.is-s::after {
+  bottom: 2px;
+}
+
+.timepoint-resize-handle.is-e,
+.timepoint-resize-handle.is-w {
+  top: 14px;
+  bottom: 14px;
+  width: 10px;
+  cursor: ew-resize;
+}
+
+.timepoint-resize-handle.is-e {
+  right: 0;
+}
+
+.timepoint-resize-handle.is-w {
+  left: 0;
+}
+
+.timepoint-resize-handle.is-e::after,
+.timepoint-resize-handle.is-w::after {
+  top: 50%;
+  width: 2px;
+  height: 28px;
+  transform: translateY(-50%);
+}
+
+.timepoint-resize-handle.is-e::after {
+  right: 2px;
+}
+
+.timepoint-resize-handle.is-w::after {
+  left: 2px;
+}
+
+.timepoint-resize-handle.is-ne,
+.timepoint-resize-handle.is-se,
+.timepoint-resize-handle.is-sw,
+.timepoint-resize-handle.is-nw {
+  width: 18px;
+  height: 18px;
+}
+
+.timepoint-resize-handle.is-ne {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+
+.timepoint-resize-handle.is-se {
+  right: 0;
+  bottom: 0;
+  cursor: nwse-resize;
+}
+
+.timepoint-resize-handle.is-sw {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
+
+.timepoint-resize-handle.is-nw {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+
+.timepoint-resize-handle.is-ne::after,
+.timepoint-resize-handle.is-se::after,
+.timepoint-resize-handle.is-sw::after,
+.timepoint-resize-handle.is-nw::after {
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  transform: translate(-50%, -50%);
+}
+
+.timepoint-timeline.is-moving-card,
+.timepoint-timeline.is-temporary-pan,
+.timepoint-timeline.is-temporary-pan .timepoint-card,
+.timepoint-timeline.is-temporary-pan a,
+.timepoint-timeline.is-temporary-pan button {
+  cursor: grab;
+}
+
+.timepoint-timeline.is-panning,
+.timepoint-timeline.is-panning .timepoint-card,
+.timepoint-timeline.is-panning a,
+.timepoint-timeline.is-panning button {
+  cursor: grabbing;
+}
+
+.timepoint-timeline.is-panning,
+.timepoint-timeline.is-moving-card,
+.timepoint-timeline.is-resizing-card {
+  touch-action: none;
+}
+
+.timepoint-minimap {
+  position: sticky;
+  z-index: 40;
+  top: 10px;
+  left: 0;
+  display: flex;
+  width: 100%;
+  height: 1px;
+  margin-bottom: -1px;
+  align-items: flex-start;
+  justify-content: flex-end;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.timepoint-minimap-toggle,
+.timepoint-minimap-panel {
+  pointer-events: auto;
+}
+
+.timepoint-minimap-toggle {
+  display: grid;
+  flex: 0 0 auto;
+  margin-right: 12px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary-alt);
+}
+
+.timepoint-minimap-panel {
+  position: relative;
+  flex: 0 0 auto;
+  width: 176px;
+  margin-right: 12px;
+  padding: 4px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--background-primary-alt) 94%, transparent);
+  box-shadow: var(--shadow-s);
+  backdrop-filter: blur(6px);
+}
+
+.timepoint-minimap-canvas {
+  display: block;
+  width: 168px;
+  height: 220px;
+  pointer-events: none;
+}
+
+.timepoint-minimap-svg {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  display: block;
+  width: 168px;
+  height: 220px;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.timepoint-minimap-card,
+.timepoint-minimap-reference {
+  fill: var(--background-secondary);
+  stroke: var(--background-modifier-border-hover);
+  stroke-width: 0.8;
+}
+
+.timepoint-minimap-reference {
+  fill: var(--background-secondary-alt);
+  stroke-dasharray: 2 2;
+}
+
+.timepoint-minimap-node {
+  fill: var(--text-faint);
+}
+
+.timepoint-minimap-viewport {
+  fill: var(--tp-accent-soft);
+  stroke: var(--tp-accent);
+  stroke-width: 1.5;
+  rx: 3px;
+  ry: 3px;
+  cursor: grab;
+}
+
+.timepoint-reference-card {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--background-secondary) 92%, transparent);
+}
+
+.timepoint-reference-card.is-day-entry {
+  border-color: color-mix(in srgb, var(--text-accent) 34%, var(--background-modifier-border));
+}
+
+.timepoint-reference-card.is-external-url {
+  border-color: color-mix(in srgb, var(--text-muted) 52%, var(--background-modifier-border));
+}
+
+.timepoint-reference-header {
+  align-items: flex-start;
+}
+
+.timepoint-reference-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  font-weight: var(--font-semibold);
+}
+
+.timepoint-reference-title span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timepoint-reference-title svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+.timepoint-reference-preview {
+  display: block;
+  width: 100%;
+  max-height: min(42%, 180px);
+  margin: 6px 0 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  object-fit: cover;
+  object-position: top;
+}
+
+.timepoint-reference-description {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: 6px;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+.timepoint-reference-target {
+  overflow: hidden;
+  margin-top: 8px;
+  color: var(--text-faint);
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timepoint-relation-path {
+  fill: none;
+  stroke: var(--text-faint);
+  stroke-dasharray: 5 5;
+  stroke-linecap: round;
+  stroke-width: 1.25;
+  opacity: 0.62;
+  pointer-events: none;
+}
+
+.timepoint-relation-path.is-timepoint {
+  stroke: var(--text-accent);
+}
+
+.timepoint-relation-path.is-external {
+  stroke-dasharray: 2 5;
+}
+
+.timepoint-relation-path.is-selected {
+  stroke: var(--tp-accent);
+  stroke-width: 2;
+  opacity: 0.94;
+}
+
+.timepoint-relations-summary {
+  position: absolute;
+  z-index: 4;
+  top: 44px;
+  right: 8px;
+  padding: 3px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  font-size: var(--font-ui-smaller);
+  pointer-events: none;
+}
+
+.timepoint-relations-summary.is-warning {
+  border-color: var(--color-orange);
+  color: var(--text-warning);
 }
 
 /* Density is a runtime-only presentation decision. The complete Markdown DOM
@@ -669,6 +1091,26 @@
   box-shadow: none;
 }
 
+.timepoint-card .timepoint-card-overlap-badge {
+  width: auto;
+  min-width: 30px;
+  padding-inline: 7px;
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-accent);
+  background: var(--background-secondary);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+}
+
+.timepoint-card.has-card-overlap {
+  outline: 1px solid color-mix(in srgb, var(--background-modifier-border-hover) 72%, transparent);
+  outline-offset: 2px;
+}
+
+.timepoint-card.is-overlap-top {
+  --tp-current-card-background: var(--background-primary);
+}
+
 .timepoint-card-action:hover,
 .timepoint-card-action:focus-visible {
   color: var(--text-normal);
@@ -690,7 +1132,7 @@
   bottom: 0;
   left: 0;
   height: 36px;
-  background: linear-gradient(transparent, var(--tp-card-background));
+  background: linear-gradient(transparent, var(--tp-current-card-background));
   content: "";
   pointer-events: none;
 }
@@ -1157,6 +1599,16 @@
     flex-direction: column;
   }
 
+  .timepoint-minimap-toggle {
+    display: grid;
+  }
+
+  .timepoint-minimap-panel {
+    position: absolute;
+    top: 48px;
+    right: 0;
+  }
+
   .timepoint-diagnostic-actions {
     width: 100%;
     justify-content: flex-start;
@@ -1266,6 +1718,24 @@
   .timepoint-navigation-tools .timepoint-icon-button {
     min-height: 44px;
     height: 44px;
+  }
+
+  .timepoint-resize-handle.is-n,
+  .timepoint-resize-handle.is-s {
+    height: 20px;
+  }
+
+  .timepoint-resize-handle.is-e,
+  .timepoint-resize-handle.is-w {
+    width: 20px;
+  }
+
+  .timepoint-resize-handle.is-ne,
+  .timepoint-resize-handle.is-se,
+  .timepoint-resize-handle.is-sw,
+  .timepoint-resize-handle.is-nw {
+    width: 28px;
+    height: 28px;
   }
 }
 

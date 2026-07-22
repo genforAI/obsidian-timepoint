@@ -1,4 +1,5 @@
 import type { TimePointEntry } from "../model/types";
+import { parseSnapshotIds, sanitizeCardLayout } from "../storage/CardLayoutMetadata";
 import { TIMEPOINT_EXPORT_SCHEMA_VERSION, type ImportIssue, type ParsedImport } from "./types";
 import {
   isValidDate,
@@ -20,6 +21,13 @@ const CSV_COLUMNS = [
   "source",
   "createdAt",
   "updatedAt",
+  "cardSchema",
+  "cardX",
+  "cardY",
+  "cardWidth",
+  "cardHeight",
+  "cardUpdatedAt",
+  "linkSnapshotIds",
 ] as const;
 
 export class CsvSyntaxError extends Error {
@@ -57,6 +65,15 @@ export function exportTimePointCsv(entries: readonly TimePointEntry[]): string {
       entry.source ?? "",
       entry.createdAt,
       entry.updatedAt,
+      entry.cardLayout ? String(entry.cardLayout.schemaVersion) : "",
+      entry.cardLayout ? String(entry.cardLayout.x) : "",
+      entry.cardLayout ? String(entry.cardLayout.y) : "",
+      entry.cardLayout ? String(entry.cardLayout.width) : "",
+      entry.cardLayout ? String(entry.cardLayout.height) : "",
+      entry.cardLayout?.updatedAt ?? "",
+      entry.linkSnapshotIds?.length
+        ? JSON.stringify([...new Set(entry.linkSnapshotIds)].sort())
+        : "",
     ]),
   ];
   return `${rows.map((row) => row.map(escapeCsvField).join(",")).join("\r\n")}\r\n`;
@@ -299,6 +316,16 @@ function normalizeCsvEntry(
   }
   if (issues.length !== issueStart) return undefined;
 
+  const cardLayout = sanitizeCardLayout({
+    schemaVersion: values.cardSchema,
+    x: values.cardX,
+    y: values.cardY,
+    width: values.cardWidth,
+    height: values.cardHeight,
+    updatedAt: values.cardUpdatedAt,
+  });
+  const linkSnapshotIds = parseCsvSnapshotIds(values.linkSnapshotIds);
+
   return {
     id,
     date,
@@ -310,7 +337,18 @@ function normalizeCsvEntry(
     source: nonEmpty(values.source) ?? "import-csv",
     createdAt,
     updatedAt,
+    ...(cardLayout ? { cardLayout } : {}),
+    ...(linkSnapshotIds.length ? { linkSnapshotIds } : {}),
   };
+}
+
+function parseCsvSnapshotIds(value: string | undefined): string[] {
+  if (!value?.trim()) return [];
+  try {
+    return parseSnapshotIds(JSON.parse(value) as unknown);
+  } catch {
+    return [];
+  }
 }
 
 function parseTags(value: string, row: number, issues: ImportIssue[]): string[] {

@@ -146,6 +146,7 @@ export function calculateElasticTimelineLayout(
 ): TimelineLayoutResult {
   const options = normalizeTimelineLayoutOptions(inputOptions);
   const entries = prepareLayoutEntries(inputEntries, options);
+  const automaticEntries = entries.filter((entry) => !entry.manual);
   const maximumCardHeight = entries.reduce(
     (maximum, entry) => Math.max(maximum, entry.cardHeight),
     options.minimumCardHeight,
@@ -171,7 +172,7 @@ export function calculateElasticTimelineLayout(
   }
 
   const workingEntries = forwardCollisionPass(
-    entries,
+    automaticEntries,
     baseHeight,
     options.topPadding,
     options.bottomPadding,
@@ -187,19 +188,27 @@ export function calculateElasticTimelineLayout(
   const totalHeight = Math.max(baseHeight, finalBottom + options.bottomPadding);
   const axisTop = options.topPadding;
   const axisBottom = totalHeight - options.bottomPadding;
-  const timeScale = createPiecewiseTimeScale(
-    createElasticScalePoints(workingEntries, axisTop, axisBottom),
-  );
+  const timeScale =
+    workingEntries.length > 0
+      ? createPiecewiseTimeScale(createElasticScalePoints(workingEntries, axisTop, axisBottom))
+      : createLinearTimeScale(axisTop, axisBottom);
+  const automaticById = new Map(workingEntries.map((entry) => [entry.id, entry]));
 
-  const laidOutEntries: LaidOutTimelineEntry[] = workingEntries.map((entry, order) => ({
-    id: entry.id,
-    minuteOfDay: entry.minuteOfDay,
-    order,
-    nodeY: timeScale.minuteToY(entry.minuteOfDay),
-    cardY: entry.cardY,
-    cardHeight: entry.cardHeight,
-    column: 0,
-  }));
+  const laidOutEntries: LaidOutTimelineEntry[] = entries.map((entry, order) => {
+    const automatic = automaticById.get(entry.id);
+    const nodeY = timeScale.minuteToY(entry.minuteOfDay);
+    return {
+      id: entry.id,
+      minuteOfDay: entry.minuteOfDay,
+      order,
+      nodeY,
+      cardY: automatic
+        ? automatic.cardY
+        : Math.min(axisBottom - entry.cardHeight, Math.max(axisTop, nodeY - entry.cardHeight / 2)),
+      cardHeight: entry.cardHeight,
+      column: 0,
+    };
+  });
 
   return makeTimelineLayoutResult({
     mode: "elastic",

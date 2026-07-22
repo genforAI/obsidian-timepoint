@@ -13,6 +13,11 @@ export type TimelineLayoutMode = "elastic" | "realtime";
 export interface LayoutEntryInput {
   id: string;
   minuteOfDay: number;
+  /**
+   * A manually positioned card still gets a true-time node, but it must not
+   * reserve a collision slot in the automatic card flow.
+   */
+  manual?: boolean;
   /** A height obtained from the rendered card. Preferred when valid. */
   measuredHeight?: number;
   /** A caller-provided estimate used before a card has been measured. */
@@ -48,6 +53,7 @@ export interface NormalizedTimelineLayoutOptions {
 export interface PreparedLayoutEntry {
   id: string;
   minuteOfDay: number;
+  manual: boolean;
   cardHeight: number;
   /** Original input position, used only as a final tie breaker. */
   sourceIndex: number;
@@ -220,6 +226,7 @@ export function prepareLayoutEntries(
       return {
         id: entry.id,
         minuteOfDay: entry.minuteOfDay,
+        manual: entry.manual === true,
         cardHeight: resolveCardHeight(entry, options),
         sourceIndex,
       };

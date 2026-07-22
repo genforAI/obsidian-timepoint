@@ -2,9 +2,10 @@
 
 TimePoint is a local-first, Markdown-native daily timeline for Obsidian. It turns ordinary event
 notes into a responsive 00:00–24:00 record of what happened without requiring an account, backend,
-telemetry, or network request.
+or telemetry. Optional external-link snapshots make bounded public HTTPS requests only after the
+user enables them.
 
-> `0.5.0-beta.1` is a desktop beta. Keep a normal vault backup and report reproducible problems
+> `0.7.0-beta.1` is a desktop beta. Keep a normal vault backup and report reproducible problems
 > with private note text removed.
 
 ## What it does
@@ -13,8 +14,12 @@ telemetry, or network request.
 - Opens the complete event in a normal Obsidian Markdown editor; double-click a card to edit.
 - Keeps long text, images, tables, code, callouts, and embeds clipped inside timeline cards.
 - Reflows dense periods in Elastic mode or preserves proportional time in Real-time mode.
-- Provides an explicit Hand tool for two-dimensional panning plus 50–300% runtime zoom; selecting,
-  creating, and editing return unchanged when the Hand tool is off.
+- Provides an explicit Hand tool, Space-to-pan, two-dimensional panning, 50–300% anchored zoom,
+  fit-to-window, jump-to-now, and a responsive minimap.
+- Lets the main timeline move and resize cards without changing their real event time, content,
+  tags, or business timestamp; layout changes support cancel, undo, redo, and reset.
+- Optionally builds a bounded daily relationship view for TimePoint links, local notes, and
+  consent-gated external-link metadata snapshots.
 - Follows the active Obsidian theme in Native mode; Signature mode derives a restrained accent
   layer from the user's `--interactive-accent`.
 - Adapts at narrow split widths with container queries and 44 px touch targets.
@@ -29,11 +34,8 @@ After the GitHub beta release is published:
 
 1. Install and enable [BRAT](https://github.com/TfTHacker/obsidian42-brat).
 2. Run **BRAT: Add a beta plugin for testing**.
-3. Enter `https://github.com/GITHUB_OWNER/obsidian-timepoint`.
+3. Enter `https://github.com/genforAI/obsidian-timepoint`.
 4. Enable **TimePoint** under **Settings → Community plugins**.
-
-`GITHUB_OWNER` is intentionally a local publishing placeholder until the maintainer signs in with
-`gh auth login`. It must be replaced before a release can pass the repository preflight.
 
 ### Manual install
 
@@ -61,22 +63,45 @@ export**.
 
 ## Record and edit
 
-- Select **Add TimePoint**, or move within about 22 px of the axis and click the previewed time.
+- Select **Add TimePoint**, or move within about 22 px of an unoccupied axis position and click the
+  previewed time.
 - TimePoint immediately creates one normal Markdown file and opens it in an adjacent native
   Obsidian editor.
 - Edit and save as usual. Obsidian owns the editor and autosave behavior.
-- Double-click a card, select its pencil, press Enter on a focused card, or select a node to reopen
-  the complete note.
+- Double-click a card or node, select its pencil, or press Enter on a focused card to reopen the
+  complete note. A single node click only selects its event.
 - Delete moves the event note to Obsidian's trash. **Undo last entry delete** restores the latest
   deletion during the current plugin session.
 
 Cards never expand into full documents inside the timeline. A visible fade and “preview ends
 here” label mark clipped content, including the lower portion of oversized images.
 
-Use the Hand button to drag a zoomed timeline vertically or horizontally without opening cards or
-creating events. Zoom Out, the percentage reset, and Zoom In affect only runtime geometry; they do
-not change timestamps, Markdown, or saved settings. At narrow widths the same controls remain in
-the `…` menu.
+Drag ordinary blank space to pan, hold Space for temporary Hand behavior, or enable the Hand button
+to pan from any non-control surface without opening, creating, or moving cards. Drag a card body to
+store a visual position and use its eight edge/corner handles to store a visual size. These actions
+never reschedule the event: edit the native note's `time` property to change real time. Press Escape
+to cancel an active gesture, and use Command/Ctrl+Z or Command/Ctrl+Shift+Z while the timeline is
+focused to undo or redo layout changes.
+
+Zoom Out, the percentage button, Zoom In, Fit, and Now affect the saved viewport for that date and
+layout mode, not event content. Command/Ctrl+wheel zooms around the pointer. On wide leaves the
+minimap is visible; below about 720 px it opens from a floating button.
+
+## Relationship view
+
+Relationship view is off by default and remembered per day. When enabled, direct Wiki links,
+Markdown links, same-day/cross-day TimePoint references, and ordinary local notes appear as
+bounded cards to the right of the event canvas. Expand buttons reveal additional local levels up
+to 50 reference cards and 100 edges; duplicate targets and cycles are bounded. Reference cards can
+be moved and resized without modifying the referenced note.
+
+External URLs remain placeholders unless **External link snapshots** is enabled. The first enable
+shows a consent explanation. With consent, TimePoint requests only public HTTPS targets through
+Obsidian, without login cookies, scripts, or full-page storage. It caches a truncated title,
+description, fetch time, source association, and an optional validated PNG/JPEG/WebP preview under
+`TimePoint/Snapshots/`. Cache hits do not reconnect; refresh is explicit. Private/reserved hosts,
+credential URLs, SVG, executable content, oversized responses, and invalid image bytes are
+rejected. Local relations continue to work if consent is declined.
 
 ## Embed a timeline
 
@@ -111,8 +136,9 @@ TimePoint/Exports/YYYY-MM-DD_to_YYYY-MM-DD/
 ```
 
 Markdown and JSON date-range exports use `timepoint-range-schema: 1` and can be imported again.
-CSV includes one row per event with its date. Portable export recreates standard
-`TimePoint/Days/...` event notes, day indexes, and a root `_TimePoint_Export.md` guide.
+CSV includes one row per event with its date and optional card fields. Portable export recreates
+standard `TimePoint/Days/...` event notes, day indexes with viewport/relationship state, used
+completed snapshots, and a root `_TimePoint_Export.md` guide.
 
 An error-level parser diagnostic, future schema, or duplicate ID blocks the whole export. If data
 changes after preview, TimePoint requires another preview and writes nothing. See
@@ -130,8 +156,11 @@ TimePoint/Days/YYYY/MM/YYYY-MM-DD/
 ```
 
 Each event body is unrestricted Markdown. TimePoint-owned YAML stores its stable ID, date, time,
-timestamps, tags, timezone, and source. Unrelated user properties such as `aliases` and
-`cssclasses` are preserved. No pixel geometry is persisted.
+timestamps, tags, timezone, and source. A separate optional `timepoint-card-schema: 1` extension
+stores normalized visual position/width and logical height; it never changes `time` or business
+`updatedAt`. Unrelated properties such as `aliases` and `cssclasses` are preserved. `_Timeline.md`
+stores a validated hidden view-state block for per-mode viewport, minimap, relationship toggle,
+reference-card geometry, and stacking order.
 
 Legacy multi-event Schema 1 day files remain readable and can migrate non-destructively to event
 notes; the original file remains as an archive. See [Data format](docs/DATA_FORMAT.md).
@@ -139,9 +168,10 @@ notes; the original file remains as an archive. See [Data format](docs/DATA_FORM
 ## Privacy and security
 
 TimePoint has no runtime dependencies, account system, telemetry, analytics, or required network
-requests. Event content remains in the Vault. User-authored remote images or links retain normal
-Obsidian behavior. Review [Privacy](docs/PRIVACY.md) and [Security](SECURITY.md) before sharing a
-diagnostic or screenshot.
+requests. Event content remains in the Vault. Optional external-link snapshots use a disclosed,
+consent-gated and bounded public HTTPS request path; they never send event bodies. User-authored
+remote images or links retain normal Obsidian behavior. Review [Privacy](docs/PRIVACY.md) and
+[Security](SECURITY.md) before enabling snapshots or sharing a diagnostic.
 
 ## Build and verify
 
@@ -157,6 +187,17 @@ minified production build, bundle smoke evaluation, and a high-severity dependen
 the same gates on Node 20 and 22. `main.js` is intentionally ignored by Git and is attached only to
 GitHub Releases.
 
+To prepare the exact local upload set after verification, run:
+
+```bash
+npm run release:stage
+```
+
+This rebuilds `Release/<version>/` with the three official GitHub/BRAT assets, a manual-install ZIP,
+SHA-256 files, release notes, and an upload checklist. `Release/` is deliberately ignored by Git:
+upload its files to the matching GitHub Release, but never commit the compiled bundle to the source
+branch. See [Publishing](docs/PUBLISHING.md) for the owner placeholder and exact tag rules.
+
 The [density and interaction stress matrix](docs/STRESS_TESTS.md) covers clustered and same-minute
 records, narrow leaves, deterministic packing, preview clipping, mode switches, and the remaining
 real-Obsidian checks.
@@ -167,7 +208,10 @@ real-Obsidian checks.
   stable community submission.
 - Physical iOS and Android behavior is not verified and is not claimed as supported.
 - Embedded timelines run in Reading View, not Live Preview.
-- There is no drag-to-reschedule, week/month analytics, cloud backend, or AI summarization.
+- Card dragging is visual layout only. There is no drag-to-reschedule, multi-select, rotation,
+  free drawing, week/month analytics, cloud backend, or AI summarization.
+- Relationship expansion is deliberately bounded and external snapshots are metadata previews,
+  not complete web archives.
 - Vault APIs cannot provide a filesystem transaction; TimePoint validates and stages output first,
   removes newly created files after a caught write failure, and never publishes the portable root
   index before its contents.

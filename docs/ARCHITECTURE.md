@@ -4,19 +4,21 @@
 
 TimePoint is a browser-compatible Obsidian plugin. Runtime source uses Obsidian and Web Platform
 APIs only; it does not import Node.js, Electron, or direct filesystem APIs. Markdown in the vault is
-authoritative. Visual layout and selected/editor state are disposable runtime data.
+authoritative. Optional visual preferences are isolated from event meaning and validated before
+use. External snapshots use only Obsidian `requestUrl` after explicit consent.
 
 ## Layers
 
-| Layer       | Main files                                                                  | Responsibility                                                                                         |
-| ----------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Bootstrap   | `src/main.ts`                                                               | Settings, commands, refresh routing, import/export coordination                                        |
-| Main view   | `src/views/TimePointView.ts`, `nativeEditorTarget.ts`                       | Date state, diagnostics/actions, timeline orchestration, native Markdown leaf reuse                    |
-| Timeline    | `src/views/TimelineRenderer.ts`, `cardDisplay.ts`, `timelineInteraction.ts` | Bounded Markdown cards, copy actions, measurement, nodes/connectors, hit area, responsive reflow       |
-| Embedded    | `src/embedded/`                                                             | Strict code-block config, Reading View lifecycle, editable/read-only routing, per-day storage refresh  |
-| Layout      | `src/layout/`                                                               | Pure Elastic and Real-time geometry and forward/inverse time scales                                    |
-| Storage     | `src/storage/`                                                              | Hybrid day loading, standalone notes, legacy parsing/repair, non-destructive migration, guarded writes |
-| Portability | `src/import-export/`, `src/services/ExportService.ts`                       | Day/range formats, preview fingerprints, portable folders, conflict and partial-write guards           |
+| Layer       | Main files                                                                  | Responsibility                                                                                        |
+| ----------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Bootstrap   | `src/main.ts`                                                               | Settings, commands, refresh routing, import/export coordination                                       |
+| Main view   | `src/views/TimePointView.ts`, `TimelineMinimap.ts`, `nativeEditorTarget.ts` | Date/view state, minimap, layout history, diagnostics, native Markdown leaf reuse                     |
+| Timeline    | `src/views/TimelineRenderer.ts`, `RelationLayerRenderer.ts`                 | Bounded event/reference cards, pointer gestures, SVG connectors, responsive reflow                    |
+| Embedded    | `src/embedded/`                                                             | Strict code-block config, Reading View lifecycle, editable/read-only routing, per-day storage refresh |
+| Layout      | `src/layout/`                                                               | Time scales, card geometry, obstacle avoidance, connector routing, responsive clamping                |
+| Relations   | `src/relations/`, `ExternalSnapshotService.ts`                              | Bounded local graph, URL validation, consent-gated safe metadata cache                                |
+| Storage     | `src/storage/`                                                              | Event/layout YAML, daily view state, legacy migration, guarded writes                                 |
+| Portability | `src/import-export/`, `src/services/ExportService.ts`                       | Day/range formats, preview fingerprints, portable folders, conflict and partial-write guards          |
 
 ## Hybrid load flow
 
@@ -76,6 +78,56 @@ ResizeObserver runs a bounded convergence pass after real width/content changes.
 leaves do not consume the budget. Container queries wrap the toolbar, diagnostics, axis, cards, and
 embedded header for narrow splits.
 
+Zoom and container changes use an in-place geometry path: the timeline, card, Markdown, image,
+selection, and renderer-component DOM stays mounted while only changed CSS custom properties,
+node positions, visible connector paths, and the canvas minimap are updated. High-resolution wheel
+input keeps only the newest target per animation-frame drain. Elastic reflow preserves one
+ResizeObserver and consumes only changed `ResizeObserverEntry` measurements instead of disconnecting
+and re-observing every card. Full obstacle-aware connector routing is deferred into bounded frame
+chunks below the card layer.
+
+## Canvas gesture and layout flow
+
+Pointer input enters a small state machine. Mouse movement below 6 px and coarse input below 10 px
+remain clicks. Blank/axis drags become pan gestures after the threshold; card bodies become visual
+moves; eight handles become resizes. Interactive links and buttons are exempt, explicit Hand mode
+turns non-control drags into pan, and holding Space temporarily does the same.
+
+During a move/resize, requestAnimationFrame applies only the newest pointer sample to the active
+card's compositor transform or size and its immediate SVG connector. Peer cards and Markdown are
+not mutated, Markdown is not rerendered, and no file is written. Escape or pointer cancellation
+restores the starting rectangle. Pointer-up freezes the current resolved rectangle into normalized
+Schema 1 layout metadata and performs one metadata-aware frontmatter update. Undo/redo records only
+layout mutations. Card selection updates the daily stack order through an approximately 250 ms
+coalesced index write. Overlap controls are pre-mounted and hidden; completed overlap reconciliation
+is contextual and changes only the selected top card's outline and chooser, so entering a dense
+connected group cannot rebuild or fade peer cards.
+
+The time node always comes from the event's true `time`. Card geometry cannot reschedule it. Manual
+cards may intentionally overlap, while automatic cards deterministically avoid manual rectangles.
+SVG paths use same-minute ports and a corridor near the axis; they are below cards and never own
+pointer events. Narrow clamps are applied to the resolved rectangle only.
+
+Each date/mode remembers zoom and normalized center. Button zoom anchors the viewport center and
+Command/Ctrl+wheel anchors the pointer. Fit and Now are explicit actions. The minimap maps nodes,
+event/reference rectangles and the visible frame, supports click/drag navigation, and temporarily
+collapses below 720 px without overwriting the wide preference.
+
+## Relationship and snapshot flow
+
+Relationship view is disabled by default per date. The graph parser extracts Wiki, Markdown and
+HTTPS links outside code, normalizes/deduplicates targets, detects cycles, and expands only
+user-opened local levels. Rendering is capped at 50 reference cards and 100 edges. Same-day
+TimePoint targets connect existing event cards; other days and ordinary notes use read-only cards.
+Reference layout is stored in the current day's index and never mutates the target note.
+
+External cards remain URL placeholders without consent. With consent, a shared request service
+validates public HTTPS destinations, deduplicates in-flight/cache work, limits concurrency and
+per-host rate, enforces response/time limits, parses detached inert metadata, validates image MIME
+and magic bytes, and writes the snapshot marker after its optional preview. Event YAML associations
+are updated only for completed snapshots. Failed/offline attempts may retry after a cooldown; a
+complete cache never reconnects unless the user selects refresh.
+
 ## Portability and safety
 
 - `_Timeline.md` is both a human-readable link index and a Reading View interactive record.
@@ -84,22 +136,26 @@ embedded header for narrow splits.
 - Day/range export reloads every source at commit and compares the preview fingerprint before
   creating a file. Range exports are capped at 366 inclusive days.
 - Portable output stages canonical event/index contents and writes its human root index last.
+- Portable output includes referenced completed snapshots, writing preview assets before snapshot
+  markers; a missing associated marker blocks the whole export.
 - Exact note snapshots guard update/delete, while unrelated YAML properties are preserved.
 - Duplicate IDs and unknown/future schemas fail closed.
 - Export aborts on any error diagnostic rather than emitting incomplete data.
 
 ## Invalidation and cleanup
 
-Storage events for either the legacy file or any direct file in the dated folder schedule debounced
-refresh. Markdown render components, embedded children, ResizeObservers, and timers are released on
-rerender/unload. No content cache persists; day state is reconstructed from Markdown.
+Storage events for either the legacy file, direct event files, daily index, or completed snapshots
+schedule bounded refresh. Markdown render components, embedded children, pointer handlers,
+ResizeObservers, animation frames, and timers are released on rerender/unload. Event/day state is
+reconstructed from Markdown; external metadata persists only in the disclosed snapshot folder.
 
 ## Theme and responsive posture
 
 Native appearance uses Obsidian semantic variables only. Signature appearance derives its accent
 surface, selected edge, and node halo from `--interactive-accent`. Runtime geometry is passed to
-scoped CSS through `--tp-*` properties; no pixel state enters Markdown. Container queries adapt at
-approximately 560, 720, and 900 px, while coarse-pointer controls have at least 44 px targets.
+scoped CSS through `--tp-*` properties. Persisted geometry is normalized preference data, not
+measured DOM pixels. Container queries adapt at approximately 560, 720, and 900 px, while
+coarse-pointer controls have at least 44 px targets.
 
 ## Mobile posture
 

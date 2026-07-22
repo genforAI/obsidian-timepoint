@@ -1,8 +1,11 @@
 import type { TAbstractFile, TFile, Vault } from "obsidian";
 import type {
   EntryMutationExpectation,
+  LayoutMutation,
   ParseDiagnostic,
   ParsedDayFile,
+  TimePointCardLayout,
+  TimePointDayViewState,
   TimePointEntry,
 } from "../model/types";
 import { isValidDateString } from "../utils/time";
@@ -13,8 +16,13 @@ import {
   parseStandaloneEntry,
   serializeDayIndex,
   serializeStandaloneEntry,
+  preservedDayViewStateBlock,
+  updateStandaloneCardLayoutMarkdown,
+  updateStandaloneSnapshotIdsMarkdown,
   updateStandaloneEntryMarkdown,
 } from "./StandaloneEntryFile";
+import { parseSnapshotIds } from "./CardLayoutMetadata";
+import { parseDayViewState, sanitizeDayViewState, upsertDayViewState } from "./DayViewState";
 import { parseDayFile } from "./TimePointParser";
 import { StorageMutationError, serializeDayFile } from "./TimePointSerializer";
 
@@ -32,6 +40,14 @@ export interface LegacyMigrationResult {
   legacyPath?: string;
 }
 
+export type ManagedViewStateChange = "none" | "viewport-only" | "render-affecting";
+
+interface ExpectedManagedViewStateWrite {
+  markdown: string;
+  renderAffecting: boolean;
+  expiresAt: number;
+}
+
 /**
  * v0.4 repository: one ordinary Markdown file per event, plus one portable
  * `_Timeline.md` index per day. Legacy bounded day files remain readable and
@@ -39,6 +55,10 @@ export interface LegacyMigrationResult {
  */
 export class DayFileRepository {
   private readonly entryPaths = new WeakMap<TimePointEntry, string>();
+  private readonly expectedManagedViewStateWrites = new Map<
+    string,
+    ExpectedManagedViewStateWrite[]
+  >();
 
   constructor(
     private readonly vault: Vault,
@@ -88,6 +108,7 @@ export class DayFileRepository {
         ...parsed,
         storageLayout: "legacy-day",
         canRepair: repair.canApply,
+        viewState: parseDayViewState(markdown).state,
       };
     }
     return {
@@ -96,7 +117,189 @@ export class DayFileRepository {
       }),
       storageLayout: "empty",
       canRepair: false,
+      viewState: parseDayViewState("").state,
     };
+  }
+
+  /** Persist display geometry without touching body, time, tags, or business `updatedAt`. */
+  async updateCardLayout(mutation: LayoutMutation): Promise<ParsedDayFile> {
+    await this.ensureEntryLayout(mutation.date);
+    const day = await this.loadDay(mutation.date);
+    const blocking = day.diagnostics.find((item) => item.severity === "error");
+    if (blocking) {
+      throw new StorageMutationError(
+        "CONFLICT",
+        `Card layout write blocked by ${blocking.code}: ${blocking.message}`,
+      );
+    }
+    const file = this.findEntryFile(mutation.date, mutation.entryId);
+    if (!file) {
+      throw new StorageMutationError(
+        "ENTRY_NOT_FOUND",
+        `Entry note ${mutation.entryId} does not exist.`,
+      );
+    }
+    const desired = mutation.after;
+    const before = mutation.before;
+    const assertCurrentLayout = (current: TimePointCardLayout | undefined): void => {
+      if (!sameCardLayout(current ?? null, before)) {
+        throw new StorageMutationError(
+          "CONFLICT",
+          `Card layout for ${mutation.entryId} changed externally; reload before moving it.`,
+        );
+      }
+    };
+
+    await this.vault.process(file, (markdown) => {
+      const parsed = parseStandaloneEntry(markdown, {
+        expectedDate: mutation.date,
+        sourcePath: file.path,
+      });
+      const error = parsed.diagnostics.find((item) => item.severity === "error");
+      if (error || !parsed.entry) {
+        throw new StorageMutationError(
+          "CONFLICT",
+          error?.message ?? `Entry note ${mutation.entryId} is no longer readable.`,
+        );
+      }
+      assertCurrentLayout(parsed.entry.cardLayout);
+      // Obsidian's processFrontMatter serializes the complete YAML document and
+      // changes unrelated quoting/list style. This bounded mutator changes only
+      // TimePoint's display extension so all business bytes remain untouched.
+      const nextMarkdown = updateStandaloneCardLayoutMarkdown(markdown, desired);
+      // The main timeline has already applied this geometry in memory. Mark
+      // the exact write so the matching Vault modify event cannot rebuild all
+      // mounted Markdown cards after pointer-up. Embedded timelines still see
+      // this as render-affecting and refresh their read-only projection.
+      this.rememberManagedWrite(file.path, nextMarkdown, true);
+      return nextMarkdown;
+    });
+    return this.loadDay(mutation.date);
+  }
+
+  /** Update only the managed hidden index block, preserving the rest of `_Timeline.md`. */
+  async updateDayViewState(
+    date: string,
+    updater: (current: TimePointDayViewState) => TimePointDayViewState,
+  ): Promise<TimePointDayViewState> {
+    await this.ensureEntryLayout(date);
+    const day = await this.loadDay(date);
+    const blocking = day.diagnostics.find((item) => item.severity === "error");
+    if (blocking) {
+      throw new StorageMutationError(
+        "CONFLICT",
+        `View-state write blocked by ${blocking.code}: ${blocking.message}`,
+      );
+    }
+    const path = this.getDayIndexPath(date);
+    const file = requireFile(
+      this.vault.getAbstractFileByPath(path) ?? fail(`Day index ${path} is unavailable.`),
+      path,
+    );
+    let committed: TimePointDayViewState | null = null;
+    await this.vault.process(file, (markdown) => {
+      const parsed = parseDayViewState(markdown);
+      if (parsed.status === "future" || parsed.status === "invalid") {
+        throw new StorageMutationError(
+          "CONFLICT",
+          parsed.warning ?? "The day view-state block cannot be changed safely.",
+        );
+      }
+      const next = sanitizeDayViewState(updater(parsed.state));
+      if (!next) throw new StorageMutationError("INVALID_ENTRY", "Invalid day view state.");
+      committed = next;
+      if (JSON.stringify(next) === JSON.stringify(parsed.state)) return markdown;
+      const nextMarkdown = upsertDayViewState(markdown, next);
+      this.rememberManagedViewStateWrite(path, nextMarkdown, parsed.state, next);
+      return nextMarkdown;
+    });
+    if (!committed) throw new StorageMutationError("CONFLICT", "Day view state was not written.");
+    return committed;
+  }
+
+  /**
+   * Match exact content produced by a managed display-only writer. This lets
+   * Vault listeners distinguish internal viewport/layout persistence from an
+   * actual external Markdown edit without hiding byte-different changes.
+   */
+  async classifyManagedViewStateChange(file: TAbstractFile): Promise<ManagedViewStateChange> {
+    if (!isFileLike(file)) return "none";
+    this.pruneManagedViewStateWrites();
+    const expected = this.expectedManagedViewStateWrites.get(file.path);
+    if (!expected || expected.length === 0) return "none";
+    let current: string;
+    try {
+      current = await this.vault.cachedRead(file);
+    } catch {
+      this.expectedManagedViewStateWrites.delete(file.path);
+      return "none";
+    }
+    const match = [...expected].reverse().find((candidate) => candidate.markdown === current);
+    if (!match) {
+      this.expectedManagedViewStateWrites.delete(file.path);
+      return "none";
+    }
+    return match.renderAffecting ? "render-affecting" : "viewport-only";
+  }
+
+  private rememberManagedViewStateWrite(
+    path: string,
+    markdown: string,
+    previous: TimePointDayViewState,
+    next: TimePointDayViewState,
+  ): void {
+    this.rememberManagedWrite(path, markdown, !viewStateIsViewportOnlyChange(previous, next));
+  }
+
+  private rememberManagedWrite(path: string, markdown: string, renderAffecting: boolean): void {
+    this.pruneManagedViewStateWrites();
+    const expected = this.expectedManagedViewStateWrites.get(path) ?? [];
+    expected.push({
+      markdown,
+      renderAffecting,
+      expiresAt: Date.now() + 5_000,
+    });
+    this.expectedManagedViewStateWrites.set(path, expected.slice(-4));
+  }
+
+  private pruneManagedViewStateWrites(now = Date.now()): void {
+    for (const [path, writes] of this.expectedManagedViewStateWrites) {
+      const active = writes.filter((write) => write.expiresAt >= now);
+      if (active.length > 0) this.expectedManagedViewStateWrites.set(path, active);
+      else this.expectedManagedViewStateWrites.delete(path);
+    }
+  }
+
+  /** Associate only completed snapshots without rewriting the event note body. */
+  async updateLinkSnapshotIds(
+    entry: TimePointEntry,
+    nextIds: readonly string[],
+  ): Promise<ParsedDayFile> {
+    await this.ensureEntryLayout(entry.date);
+    const file = this.findEntryFile(entry.date, entry.id);
+    if (!file) {
+      throw new StorageMutationError("ENTRY_NOT_FOUND", `Entry note ${entry.id} does not exist.`);
+    }
+    const expected = [...(entry.linkSnapshotIds ?? [])].sort();
+    const next = parseSnapshotIds(nextIds);
+    if (JSON.stringify(expected) === JSON.stringify(next)) return this.loadDay(entry.date);
+    const assertCurrent = (current: readonly string[]): void => {
+      if (JSON.stringify([...current].sort()) !== JSON.stringify(expected)) {
+        throw new StorageMutationError(
+          "CONFLICT",
+          `Snapshot associations for ${entry.id} changed externally; reload before refreshing relations.`,
+        );
+      }
+    };
+    await this.vault.process(file, (markdown) => {
+      const parsed = parseStandaloneEntry(markdown, { expectedDate: entry.date });
+      if (!parsed.entry) {
+        throw new StorageMutationError("CONFLICT", `Entry note ${entry.id} is unreadable.`);
+      }
+      assertCurrent(parsed.entry.linkSnapshotIds ?? []);
+      return updateStandaloneSnapshotIdsMarkdown(markdown, next);
+    });
+    return this.loadDay(entry.date);
   }
 
   async addEntry(entry: TimePointEntry): Promise<ParsedDayFile> {
@@ -314,6 +517,15 @@ export class DayFileRepository {
     const rawMarkdown = indexAbstract
       ? await this.vault.cachedRead(requireFile(indexAbstract, indexPath))
       : "";
+    const parsedViewState = parseDayViewState(rawMarkdown);
+    if (parsedViewState.warning) {
+      diagnostics.push({
+        severity: "warning",
+        code: "INVALID_VIEW_STATE",
+        message: parsedViewState.warning,
+        sourcePath: indexPath,
+      });
+    }
     return {
       schemaVersion: 2,
       date,
@@ -324,16 +536,18 @@ export class DayFileRepository {
       storageLayout: "entry-files",
       indexPath,
       canRepair: false,
+      viewState: parsedViewState.state,
     };
   }
 
   private getDirectEntryFiles(date: string): TFile[] {
-    const folder = this.getEntryFolderPath(date);
-    return this.vault
-      .getMarkdownFiles()
+    const folder = this.vault.getFolderByPath(this.getEntryFolderPath(date));
+    if (!folder) return [];
+    return folder.children
       .filter(
-        (file) =>
-          file.parent?.path === folder &&
+        (file): file is TFile =>
+          isFileLike(file) &&
+          file.extension.toLowerCase() === "md" &&
           file.basename !== DAY_INDEX_BASENAME &&
           !file.basename.startsWith("_"),
       )
@@ -365,6 +579,7 @@ export class DayFileRepository {
       loaded.entries,
       loaded.timezone ?? this.options.getTimezone?.(),
       this.vault.getAbstractFileByPath(this.getDayPath(date)) ? this.getDayPath(date) : undefined,
+      preservedDayViewStateBlock(loaded.rawMarkdown),
     );
     const existing = this.vault.getAbstractFileByPath(path);
     if (existing) {
@@ -397,6 +612,34 @@ export class DayFileRepository {
       }
     }
   }
+}
+
+function sameCardLayout(
+  left: TimePointCardLayout | null,
+  right: TimePointCardLayout | null,
+): boolean {
+  if (left === null || right === null) return left === right;
+  return (
+    left.schemaVersion === right.schemaVersion &&
+    left.x === right.x &&
+    left.y === right.y &&
+    left.width === right.width &&
+    left.height === right.height &&
+    left.updatedAt === right.updatedAt
+  );
+}
+
+function viewStateIsViewportOnlyChange(
+  previous: TimePointDayViewState,
+  next: TimePointDayViewState,
+): boolean {
+  return (
+    previous.schemaVersion === next.schemaVersion &&
+    previous.minimapExpanded === next.minimapExpanded &&
+    previous.relationsEnabled === next.relationsEnabled &&
+    JSON.stringify(previous.stackOrder) === JSON.stringify(next.stackOrder) &&
+    JSON.stringify(previous.referenceCards) === JSON.stringify(next.referenceCards)
+  );
 }
 
 export function normalizeStorageFolder(folder: string): string {

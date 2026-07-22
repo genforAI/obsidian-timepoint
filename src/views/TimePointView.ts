@@ -10,7 +10,17 @@ import {
 } from "obsidian";
 import type TimePointPlugin from "../main";
 import { getLocale, t } from "../i18n";
-import type { ParsedDayFile, TimePointEntry } from "../model/types";
+import type {
+  LayoutMutation,
+  ParsedDayFile,
+  TimePointCardLayout,
+  TimePointDayViewState,
+  TimePointReferenceCardState,
+  TimePointRelationCard,
+  TimePointRelationGraph,
+  TimePointEntry,
+  TimelineViewportState,
+} from "../model/types";
 import {
   createEntryMutationExpectation,
   createTimePointEntry,
@@ -19,17 +29,32 @@ import {
 import type { TimelineMode } from "../settings/settings";
 import { getLocalTimezone, isValidDateString, shiftDate, todayDateString } from "../utils/time";
 import { TimelineRenderer } from "./TimelineRenderer";
+import { LayoutHistory, inverseLayoutMutation, redoLayoutMutation } from "./layoutHistory";
+import { LatestAsyncQueue } from "./latestAsyncQueue";
 import { locateNativeEditorTarget } from "./nativeEditorTarget";
 import {
   MAX_TIMELINE_ZOOM,
   MIN_TIMELINE_ZOOM,
+  clampViewportOffset,
+  isTimelineZoomWheel,
   normalizeTimelineZoom,
-  resolveZoomedScrollTop,
+  resolveAnchoredScrollOffset,
+  shouldRestoreStoredViewport,
   stepTimelineZoom,
+  timelineZoomFromWheel,
+  viewportCentreRatio,
   type TimelineInteractionMode,
 } from "./timelineNavigation";
 
 export const TIMEPOINT_VIEW_TYPE = "timepoint-view";
+
+interface PendingDayStatePatch {
+  modes?: Partial<Record<TimelineMode, TimelineViewportState>>;
+  minimapExpanded?: boolean;
+  stackOrder?: string[];
+  relationsEnabled?: boolean;
+  referenceCards?: TimePointDayViewState["referenceCards"];
+}
 
 export class TimePointView extends ItemView {
   private selectedDate = todayDateString();
@@ -53,8 +78,27 @@ export class TimePointView extends ItemView {
   private zoomOutButton: HTMLButtonElement | null = null;
   private zoomResetButton: HTMLButtonElement | null = null;
   private zoomInButton: HTMLButtonElement | null = null;
+  private fitButton: HTMLButtonElement | null = null;
+  private nowButton: HTMLButtonElement | null = null;
+  private relationsButton: HTMLButtonElement | null = null;
+  private selectedEntryId: string | null = null;
+  private relationGraph: TimePointRelationGraph | null = null;
+  private readonly layoutHistory = new LayoutHistory();
+  private viewportContextKey = "";
+  private dateInputTimer: number | null = null;
+  private dayStateTimer: number | null = null;
+  private wheelZoomFrame: number | null = null;
+  private pendingWheelZoom: number | null = null;
+  private pendingWheelAnchor: { clientX: number; clientY: number } | null = null;
+  private wheelZoomRunning = false;
+  private zoomAnchorFrame: number | null = null;
+  private zoomAnchorVersion = 0;
+  private zoomApplyChain: Promise<void> = Promise.resolve();
+  private layoutCommitChain: Promise<void> = Promise.resolve();
+  private pendingDayStatePatches = new Map<string, PendingDayStatePatch>();
   private loadToken = 0;
   private opened = false;
+  private readonly refreshQueue: LatestAsyncQueue<number>;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -63,6 +107,7 @@ export class TimePointView extends ItemView {
     super(leaf);
     this.mode = timePoint.settings.defaultTimelineMode;
     this.timelineRenderer = new TimelineRenderer(this.app);
+    this.refreshQueue = new LatestAsyncQueue((token) => this.performRefresh(token));
     this.addChild(this.timelineRenderer);
   }
 
@@ -94,12 +139,30 @@ export class TimePointView extends ItemView {
       }),
     );
     this.registerEvent(this.app.workspace.on("file-open", () => this.syncNativeEditorSurface()));
+    this.scrollEl.addEventListener("scroll", () => this.queueCurrentViewportState(), {
+      passive: true,
+    });
+    this.scrollEl.addEventListener("wheel", (event) => this.handleZoomWheel(event), {
+      capture: true,
+      passive: false,
+    });
+    this.contentEl.addEventListener("keydown", (event) => this.handleLayoutHistoryShortcut(event));
     await this.refresh();
   }
 
   override async onClose(): Promise<void> {
     this.opened = false;
     this.loadToken += 1;
+    await this.flushDayStatePatches();
+    if (this.dayStateTimer !== null) window.clearTimeout(this.dayStateTimer);
+    this.dayStateTimer = null;
+    if (this.dateInputTimer !== null) window.clearTimeout(this.dateInputTimer);
+    this.dateInputTimer = null;
+    if (this.wheelZoomFrame !== null) window.cancelAnimationFrame(this.wheelZoomFrame);
+    this.wheelZoomFrame = null;
+    this.cancelPendingZoomAnchor();
+    this.pendingWheelZoom = null;
+    this.pendingWheelAnchor = null;
     // The adjacent Markdown leaf is a real Obsidian note view and remains open
     // when the timeline closes, just like any user-opened Markdown pane.
     this.removeNativeEditorSurfaceClass();
@@ -108,16 +171,30 @@ export class TimePointView extends ItemView {
   }
 
   async setDate(date: string): Promise<void> {
+    if (this.dateInputTimer !== null) window.clearTimeout(this.dateInputTimer);
+    this.dateInputTimer = null;
     if (!isValidDateString(date)) {
       new Notice(t("notice.invalidDate", { date }));
       if (this.dateInput) this.dateInput.value = this.selectedDate;
       return;
     }
     if (date === this.selectedDate) return;
+    await this.flushDayStatePatches();
     this.selectedDate = date;
+    this.selectedEntryId = null;
+    this.viewportContextKey = "";
     this.timePoint.setLastOpenedDate(date);
     this.refreshLeafHeader();
     if (this.opened) await this.refresh();
+  }
+
+  private queueDateInputCommit(): void {
+    if (this.dateInputTimer !== null) window.clearTimeout(this.dateInputTimer);
+    const value = this.dateInput.value;
+    this.dateInputTimer = window.setTimeout(() => {
+      this.dateInputTimer = null;
+      void this.setDate(value);
+    }, 200);
   }
 
   getDate(): string {
@@ -127,6 +204,15 @@ export class TimePointView extends ItemView {
   async refresh(): Promise<void> {
     if (!this.opened) return;
     const token = ++this.loadToken;
+    await this.refreshQueue.request(token);
+  }
+
+  private async performRefresh(token: number): Promise<void> {
+    if (!this.opened || token !== this.loadToken) return;
+    const requestedViewportKey = `${this.selectedDate}:${this.mode}`;
+    const preserveInPlace = this.viewportContextKey === requestedViewportKey;
+    const previousScrollTop = this.scrollEl.scrollTop;
+    const previousScrollLeft = this.scrollEl.scrollLeft;
     this.contentEl.removeClass("timepoint-appearance-native", "timepoint-appearance-signature");
     this.contentEl.addClass(`timepoint-appearance-${this.timePoint.settings.appearanceMode}`);
     this.updateDateHeader();
@@ -138,6 +224,17 @@ export class TimePointView extends ItemView {
       const day = await this.timePoint.repository.loadDay(this.selectedDate);
       if (token !== this.loadToken) return;
       this.currentDay = day;
+      const viewportKey = `${this.selectedDate}:${this.mode}`;
+      const restoreViewport = shouldRestoreStoredViewport(this.viewportContextKey, viewportKey);
+      if (restoreViewport) {
+        this.timelineZoom = day.viewState?.modes[this.mode].zoom ?? 1;
+        this.updateNavigationControls();
+      }
+      this.relationGraph = day.viewState?.relationsEnabled
+        ? await this.timePoint.buildRelationGraph(day.entries, day.viewState)
+        : null;
+      if (token !== this.loadToken) return;
+      this.updateRelationsControl();
       this.renderDiagnostics(day);
       await this.timelineRenderer.render(
         this.timelineHostEl,
@@ -156,9 +253,59 @@ export class TimePointView extends ItemView {
           getEntrySourcePath: (entry) => this.timePoint.repository.getEntrySourcePath(entry),
           interactionMode: this.interactionMode,
           timelineScale: this.timelineZoom,
+          dayViewState: day.viewState,
+          selectedEntryId: this.selectedEntryId,
+          layoutEditable: true,
+          onSelectEntry: (entry) => this.selectEntry(entry),
+          onCommitLayout: (mutation) => this.commitCardLayout(mutation),
+          onStackOrderChange: (stackOrder) => this.persistStackOrder(stackOrder),
+          onMinimapExpandedChange: (expanded) => this.persistMinimapState(expanded),
+          ...(this.relationGraph ? { relationGraph: this.relationGraph } : {}),
+          resolveResourcePath: (path) => {
+            const file = this.app.vault.getFileByPath(path);
+            return file ? this.app.vault.getResourcePath(file) : "";
+          },
+          onSelectReference: (id) => this.selectReference(id),
+          onReferenceStateChange: (state) => this.persistReferenceState(state),
+          onToggleReferenceExpanded: (card, state) => this.toggleReferenceExpanded(card, state),
+          onOpenReference: (card) => this.openReference(card),
+          onRefreshReferenceSnapshot: (card) => this.refreshReferenceSnapshot(card),
         },
       );
+      if (token !== this.loadToken) return;
+      if (restoreViewport) {
+        await this.restoreStoredViewport(day.viewState?.modes[this.mode]);
+        if (token !== this.loadToken) return;
+        this.viewportContextKey = viewportKey;
+      } else if (preserveInPlace) {
+        // Capture before the loading banner and repository read. A concurrent
+        // Vault event used to start a second render while the first canvas was
+        // empty, making that render capture scrollTop=0 and jump after a drag.
+        await nextFrame();
+        if (token !== this.loadToken) return;
+        this.scrollEl.scrollTop = clampViewportOffset(
+          previousScrollTop,
+          this.scrollEl.scrollHeight,
+          this.scrollEl.clientHeight,
+        );
+        this.scrollEl.scrollLeft = clampViewportOffset(
+          previousScrollLeft,
+          this.scrollEl.scrollWidth,
+          this.scrollEl.clientWidth,
+        );
+      }
       this.syncEditingCardHighlight();
+      if (this.relationGraph) {
+        const graph = this.relationGraph;
+        void this.timePoint
+          .hydrateExternalRelations(graph, day.entries)
+          .then((changed) => {
+            if (changed && token === this.loadToken && this.opened) void this.refresh();
+          })
+          .catch((error: unknown) => {
+            new Notice(error instanceof Error ? error.message : t("relations.snapshotFailure"));
+          });
+      }
     } catch (error) {
       if (token !== this.loadToken) return;
       this.statusEl.addClass("is-error");
@@ -206,7 +353,7 @@ export class TimePointView extends ItemView {
       cls: "timepoint-date-input",
       attr: { type: "date", "aria-label": t("view.chooseDate") },
     });
-    this.dateInput.addEventListener("change", () => void this.setDate(this.dateInput.value));
+    this.dateInput.addEventListener("change", () => this.queueDateInputCommit());
 
     const actions = toolbar.createDiv({ cls: "timepoint-action-cluster" });
     const today = actions.createEl("button", {
@@ -224,6 +371,7 @@ export class TimePointView extends ItemView {
     this.modeSelect.value = this.mode;
     this.modeSelect.addEventListener("change", () => {
       this.mode = this.modeSelect.value as TimelineMode;
+      this.viewportContextKey = "";
       void this.refresh();
     });
 
@@ -248,6 +396,15 @@ export class TimePointView extends ItemView {
       "click",
       () => void this.setTimelineZoom(stepTimelineZoom(this.timelineZoom, 1)),
     );
+    this.fitButton = this.iconButton(navigation, "scan", t("view.fitWindow"));
+    this.fitButton.addClass("timepoint-fit-button");
+    this.fitButton.addEventListener("click", () => void this.fitTimelineToWindow());
+    this.nowButton = this.iconButton(navigation, "locate-fixed", t("view.jumpNow"));
+    this.nowButton.addClass("timepoint-now-button");
+    this.nowButton.addEventListener("click", () => void this.jumpToNow());
+    this.relationsButton = this.iconButton(navigation, "git-fork", t("relations.show"));
+    this.relationsButton.addClass("timepoint-relations-button");
+    this.relationsButton.addEventListener("click", () => void this.toggleRelations());
     this.updateNavigationControls();
 
     const add = actions.createEl("button", { cls: "timepoint-button is-accent" });
@@ -288,23 +445,71 @@ export class TimePointView extends ItemView {
     await this.refresh();
   }
 
-  private async setTimelineZoom(nextZoom: number): Promise<void> {
+  private setTimelineZoom(
+    nextZoom: number,
+    anchor?: { clientX: number; clientY: number },
+  ): Promise<void> {
+    const operation = this.zoomApplyChain.then(() => this.applyTimelineZoom(nextZoom, anchor));
+    this.zoomApplyChain = operation.catch(() => undefined);
+    return operation;
+  }
+
+  private async applyTimelineZoom(
+    nextZoom: number,
+    anchor?: { clientX: number; clientY: number },
+  ): Promise<void> {
+    const zoomStartedAt = performance.now();
     const normalized = normalizeTimelineZoom(nextZoom);
     if (normalized === this.timelineZoom) return;
     const previousScrollTop = this.scrollEl.scrollTop;
+    const previousScrollLeft = this.scrollEl.scrollLeft;
     const previousScrollHeight = this.scrollEl.scrollHeight;
+    const previousScrollWidth = this.scrollEl.scrollWidth;
     const previousClientHeight = this.scrollEl.clientHeight;
+    const previousClientWidth = this.scrollEl.clientWidth;
+    const scrollBounds = this.scrollEl.getBoundingClientRect();
+    const anchorX = anchor
+      ? Math.min(previousClientWidth, Math.max(0, anchor.clientX - scrollBounds.left))
+      : previousClientWidth / 2;
+    const anchorY = anchor
+      ? Math.min(previousClientHeight, Math.max(0, anchor.clientY - scrollBounds.top))
+      : previousClientHeight / 2;
     this.timelineZoom = normalized;
+    this.updateCurrentViewportState({ zoom: normalized });
     this.updateNavigationControls();
-    await this.refresh();
-    await nextFrame();
-    this.scrollEl.scrollTop = resolveZoomedScrollTop(
-      previousScrollTop,
-      previousScrollHeight,
-      previousClientHeight,
-      this.scrollEl.scrollHeight,
-      this.scrollEl.clientHeight,
-    );
+    const reused = await this.timelineRenderer.updateTimelineScale(normalized);
+    this.timelineHostEl.dataset.tpZoomReused = String(reused);
+    if (!reused) await this.refresh();
+    this.cancelPendingZoomAnchor();
+    const anchorVersion = ++this.zoomAnchorVersion;
+    this.zoomAnchorFrame = window.requestAnimationFrame(() => {
+      this.zoomAnchorFrame = null;
+      if (!this.opened || anchorVersion !== this.zoomAnchorVersion) return;
+      this.scrollEl.scrollTop = resolveAnchoredScrollOffset(
+        previousScrollTop,
+        previousScrollHeight,
+        this.scrollEl.scrollHeight,
+        this.scrollEl.clientHeight,
+        anchorY,
+      );
+      this.scrollEl.scrollLeft = resolveAnchoredScrollOffset(
+        previousScrollLeft,
+        previousScrollWidth,
+        this.scrollEl.scrollWidth,
+        this.scrollEl.clientWidth,
+        anchorX,
+      );
+      this.queueCurrentViewportState();
+      this.timelineHostEl.dataset.tpLastZoomMs = (
+        Math.round((performance.now() - zoomStartedAt) * 10) / 10
+      ).toFixed(1);
+    });
+  }
+
+  private cancelPendingZoomAnchor(): void {
+    this.zoomAnchorVersion += 1;
+    if (this.zoomAnchorFrame !== null) window.cancelAnimationFrame(this.zoomAnchorFrame);
+    this.zoomAnchorFrame = null;
   }
 
   private updateNavigationControls(): void {
@@ -318,6 +523,384 @@ export class TimePointView extends ItemView {
     }
     if (this.zoomOutButton) this.zoomOutButton.disabled = this.timelineZoom <= MIN_TIMELINE_ZOOM;
     if (this.zoomInButton) this.zoomInButton.disabled = this.timelineZoom >= MAX_TIMELINE_ZOOM;
+  }
+
+  private selectEntry(entry: TimePointEntry | null): void {
+    this.applyTimelineSelection(entry?.id ?? null, "entry");
+  }
+
+  private selectReference(id: string): void {
+    this.applyTimelineSelection(id, "reference");
+  }
+
+  private applyTimelineSelection(id: string | null, kind: "entry" | "reference"): void {
+    this.selectedEntryId = id;
+    // Only the previously selected handful of elements receive a class write.
+    // Toggling every card at drag start invalidated the full 250-card canvas.
+    for (const selected of this.timelineHostEl.querySelectorAll<HTMLElement | SVGElement>(
+      ".timepoint-card.is-selected, .timepoint-connector-path.is-selected, .timepoint-relation-path.is-selected",
+    )) {
+      selected.classList.remove("is-selected");
+    }
+    if (!id) return;
+    const escaped = escapeSelectorValue(id);
+    const cardSelector =
+      kind === "entry"
+        ? `.timepoint-card[data-entry-id="${escaped}"]`
+        : `.timepoint-reference-card[data-reference-id="${escaped}"]`;
+    this.timelineHostEl.querySelector<HTMLElement>(cardSelector)?.addClass("is-selected");
+    if (kind === "entry") {
+      this.timelineHostEl
+        .querySelector<SVGPathElement>(`.timepoint-connector-path[data-entry-id="${escaped}"]`)
+        ?.classList.add("is-selected");
+    }
+    for (const path of this.timelineHostEl.querySelectorAll<SVGPathElement>(
+      `.timepoint-relation-path[data-from-id="${escaped}"], .timepoint-relation-path[data-to-id="${escaped}"]`,
+    )) {
+      path.classList.add("is-selected");
+    }
+  }
+
+  private commitCardLayout(mutation: LayoutMutation): Promise<void> {
+    const entry = this.currentDay?.entries.find((candidate) => candidate.id === mutation.entryId);
+    // Update the renderer's shared entry immediately. A second rapid gesture
+    // can use this one as its conflict-safe `before` value while writes remain
+    // serialized outside the pointer/render path.
+    if (entry) {
+      if (mutation.after) entry.cardLayout = mutation.after;
+      else delete entry.cardLayout;
+    }
+    const operation = this.layoutCommitChain.then(async () => {
+      try {
+        // Pointer-down also persists z-order. Commit it before geometry so a
+        // reopened date cannot resurrect an older top card.
+        await this.flushDayStatePatches();
+        await this.timePoint.repository.updateCardLayout(mutation);
+        this.layoutHistory.push(mutation);
+        if (mutation.reason === "reset") {
+          const reused = await this.timelineRenderer.refreshLayoutGeometry();
+          if (!reused) await this.refresh();
+        }
+      } catch (error) {
+        if (entry && cardLayoutsEqual(entry.cardLayout ?? null, mutation.after)) {
+          if (mutation.before) entry.cardLayout = mutation.before;
+          else delete entry.cardLayout;
+        }
+        throw error;
+      }
+    });
+    this.layoutCommitChain = operation.catch(() => undefined);
+    return operation;
+  }
+
+  private persistStackOrder(stackOrder: string[]): void {
+    if (!this.currentDay?.viewState) return;
+    this.currentDay.viewState = {
+      ...this.currentDay.viewState,
+      stackOrder: [...stackOrder],
+    };
+    this.queueDayStatePatch(this.selectedDate, { stackOrder: [...stackOrder] });
+  }
+
+  private persistMinimapState(expanded: boolean): void {
+    if (!this.currentDay?.viewState) return;
+    this.currentDay.viewState = { ...this.currentDay.viewState, minimapExpanded: expanded };
+    this.queueDayStatePatch(this.selectedDate, { minimapExpanded: expanded });
+  }
+
+  private persistReferenceState(state: TimePointReferenceCardState): void {
+    if (!this.currentDay?.viewState) return;
+    const referenceCards = {
+      ...this.currentDay.viewState.referenceCards,
+      [state.id]: { ...state },
+    };
+    this.currentDay.viewState = { ...this.currentDay.viewState, referenceCards };
+    this.queueDayStatePatch(this.selectedDate, { referenceCards });
+  }
+
+  private async toggleReferenceExpanded(
+    _card: TimePointRelationCard,
+    state: TimePointReferenceCardState,
+  ): Promise<void> {
+    const date = this.selectedDate;
+    await this.flushDayStatePatches();
+    await this.timePoint.repository.updateDayViewState(date, (current) => ({
+      ...current,
+      referenceCards: { ...current.referenceCards, [state.id]: { ...state } },
+    }));
+    if (date === this.selectedDate) await this.refresh();
+  }
+
+  private async toggleRelations(): Promise<void> {
+    const enabled = !(this.currentDay?.viewState?.relationsEnabled ?? false);
+    if (enabled) await this.timePoint.ensureExternalSnapshotConsent();
+    await this.flushDayStatePatches();
+    await this.timePoint.repository.updateDayViewState(this.selectedDate, (current) => ({
+      ...current,
+      relationsEnabled: enabled,
+    }));
+    await this.refresh();
+  }
+
+  private updateRelationsControl(): void {
+    const enabled = this.currentDay?.viewState?.relationsEnabled === true;
+    this.relationsButton?.toggleClass("is-active", enabled);
+    this.relationsButton?.setAttr("aria-pressed", String(enabled));
+    this.relationsButton?.setAttr("aria-label", t(enabled ? "relations.hide" : "relations.show"));
+  }
+
+  private async openReference(card: TimePointRelationCard): Promise<void> {
+    if (card.kind === "day-entry" && card.targetDate) {
+      await this.setDate(card.targetDate);
+      this.selectedEntryId = card.targetEntryId ?? null;
+      await this.refresh();
+      await nextFrame();
+      const target = this.selectedEntryId
+        ? this.timelineHostEl.querySelector<HTMLElement>(
+            `.timepoint-card[data-entry-id="${escapeSelectorValue(this.selectedEntryId)}"]`,
+          )
+        : null;
+      target?.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+      return;
+    }
+    await this.app.workspace.openLinkText(card.target, "", true);
+  }
+
+  private async refreshReferenceSnapshot(card: TimePointRelationCard): Promise<void> {
+    if (!this.currentDay) return;
+    try {
+      const refreshed = await this.timePoint.refreshExternalSnapshot(card, this.currentDay.entries);
+      if (refreshed) {
+        new Notice(t("relations.snapshotRefreshed"));
+        await this.refresh();
+      }
+    } catch (error) {
+      new Notice(error instanceof Error ? error.message : t("relations.snapshotFailure"));
+    }
+  }
+
+  private updateCurrentViewportState(patch: Partial<TimelineViewportState>): void {
+    const viewState = this.currentDay?.viewState;
+    if (!viewState) return;
+    const current = viewState.modes[this.mode];
+    viewState.modes[this.mode] = { ...current, ...patch };
+  }
+
+  private queueCurrentViewportState(): void {
+    if (!this.opened || !this.currentDay?.viewState || !this.scrollEl) return;
+    const previous = this.currentDay.viewState.modes[this.mode];
+    const viewport: TimelineViewportState = {
+      zoom: this.timelineZoom,
+      centerX: viewportCentreRatio(
+        this.scrollEl.scrollLeft,
+        this.scrollEl.scrollWidth,
+        this.scrollEl.clientWidth,
+      ),
+      centerY: viewportCentreRatio(
+        this.scrollEl.scrollTop,
+        this.scrollEl.scrollHeight,
+        this.scrollEl.clientHeight,
+      ),
+    };
+    if (
+      previous.zoom === viewport.zoom &&
+      Math.abs(previous.centerX - viewport.centerX) < 0.0001 &&
+      Math.abs(previous.centerY - viewport.centerY) < 0.0001
+    ) {
+      return;
+    }
+    this.currentDay.viewState.modes[this.mode] = viewport;
+    this.queueDayStatePatch(this.selectedDate, { modes: { [this.mode]: viewport } });
+  }
+
+  private queueDayStatePatch(date: string, patch: PendingDayStatePatch): void {
+    const previous = this.pendingDayStatePatches.get(date) ?? {};
+    this.pendingDayStatePatches.set(date, {
+      ...previous,
+      ...patch,
+      ...(previous.modes || patch.modes ? { modes: { ...previous.modes, ...patch.modes } } : {}),
+      ...(patch.referenceCards ? { referenceCards: { ...patch.referenceCards } } : {}),
+    });
+    if (this.dayStateTimer !== null) window.clearTimeout(this.dayStateTimer);
+    this.dayStateTimer = window.setTimeout(() => {
+      this.dayStateTimer = null;
+      void this.flushDayStatePatches();
+    }, 250);
+  }
+
+  private async flushDayStatePatches(): Promise<void> {
+    if (this.dayStateTimer !== null) window.clearTimeout(this.dayStateTimer);
+    this.dayStateTimer = null;
+    const pending = [...this.pendingDayStatePatches.entries()];
+    this.pendingDayStatePatches.clear();
+    for (const [date, patch] of pending) {
+      try {
+        await this.timePoint.repository.updateDayViewState(date, (current) => ({
+          ...current,
+          modes: {
+            elastic: patch.modes?.elastic ?? current.modes.elastic,
+            realtime: patch.modes?.realtime ?? current.modes.realtime,
+          },
+          minimapExpanded: patch.minimapExpanded ?? current.minimapExpanded,
+          relationsEnabled: patch.relationsEnabled ?? current.relationsEnabled,
+          stackOrder: patch.stackOrder ?? current.stackOrder,
+          referenceCards: patch.referenceCards ?? current.referenceCards,
+        }));
+      } catch (error) {
+        new Notice(error instanceof Error ? error.message : t("notice.viewStateFailure"));
+      }
+    }
+  }
+
+  private async restoreStoredViewport(viewport: TimelineViewportState | undefined): Promise<void> {
+    if (!viewport) return;
+    await nextFrame();
+    this.scrollEl.scrollLeft = Math.max(
+      0,
+      viewport.centerX * this.scrollEl.scrollWidth - this.scrollEl.clientWidth / 2,
+    );
+    this.scrollEl.scrollTop = Math.max(
+      0,
+      viewport.centerY * this.scrollEl.scrollHeight - this.scrollEl.clientHeight / 2,
+    );
+  }
+
+  private handleZoomWheel(event: WheelEvent): void {
+    if (!isTimelineZoomWheel(event.metaKey, event.ctrlKey)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const base = this.pendingWheelZoom ?? this.timelineZoom;
+    this.pendingWheelZoom = timelineZoomFromWheel(
+      base,
+      event.deltaY,
+      event.deltaMode,
+      this.scrollEl.clientHeight,
+    );
+    this.pendingWheelAnchor = { clientX: event.clientX, clientY: event.clientY };
+    this.scheduleWheelZoomFrame();
+  }
+
+  /**
+   * Keep only the latest wheel target while a geometry pass is running. A
+   * high-resolution trackpad can emit several events per frame; serializing
+   * every intermediate zoom made the complete canvas visibly repaint many
+   * times after the fingers had already stopped.
+   */
+  private scheduleWheelZoomFrame(): void {
+    if (this.wheelZoomFrame !== null || this.wheelZoomRunning || !this.opened) return;
+    this.wheelZoomFrame = window.requestAnimationFrame(() => {
+      this.wheelZoomFrame = null;
+      void this.drainLatestWheelZoom();
+    });
+  }
+
+  private async drainLatestWheelZoom(): Promise<void> {
+    if (this.wheelZoomRunning) return;
+    this.wheelZoomRunning = true;
+    try {
+      while (this.opened && this.pendingWheelZoom !== null) {
+        const next = this.pendingWheelZoom;
+        const anchor = this.pendingWheelAnchor;
+        this.pendingWheelZoom = null;
+        this.pendingWheelAnchor = null;
+        if (!anchor || next === this.timelineZoom) continue;
+        try {
+          await this.setTimelineZoom(next, anchor);
+        } catch (error) {
+          new Notice(error instanceof Error ? error.message : t("notice.viewStateFailure"));
+        }
+      }
+    } finally {
+      this.wheelZoomRunning = false;
+      if (this.pendingWheelZoom !== null) this.scheduleWheelZoomFrame();
+    }
+  }
+
+  private async fitTimelineToWindow(): Promise<void> {
+    const timeline = this.timelineHostEl.querySelector<HTMLElement>(".timepoint-timeline");
+    if (!timeline || timeline.offsetHeight <= 0) return;
+    const next = normalizeTimelineZoom(
+      this.timelineZoom * ((this.scrollEl.clientHeight * 0.9) / timeline.offsetHeight),
+    );
+    await this.setTimelineZoom(next);
+    this.cancelPendingZoomAnchor();
+    this.scrollEl.scrollTop = 0;
+    this.queueCurrentViewportState();
+  }
+
+  private async jumpToNow(): Promise<void> {
+    const today = this.timePoint.getCurrentDate();
+    if (this.selectedDate !== today) await this.setDate(today);
+    await nextFrame();
+    const timeline = this.timelineHostEl.querySelector<HTMLElement>(".timepoint-timeline");
+    if (!timeline) return;
+    const axisTop = Number.parseFloat(
+      getComputedStyle(timeline).getPropertyValue("--tp-axis-top-y"),
+    );
+    const axisHeight = Number.parseFloat(
+      getComputedStyle(timeline).getPropertyValue("--tp-axis-height"),
+    );
+    const [hour = 0, minute = 0] = this.timePoint.getCurrentTime().split(":").map(Number);
+    const minuteOfDay = hour * 60 + minute;
+    const target =
+      timeline.offsetTop +
+      (Number.isFinite(axisTop) ? axisTop : 0) +
+      (Number.isFinite(axisHeight) ? axisHeight : timeline.offsetHeight) * (minuteOfDay / 1440);
+    this.scrollEl.scrollTop = Math.max(0, target - this.scrollEl.clientHeight / 2);
+    this.queueCurrentViewportState();
+  }
+
+  private handleLayoutHistoryShortcut(event: KeyboardEvent): void {
+    if ((!event.metaKey && !event.ctrlKey) || event.key.toLowerCase() !== "z") return;
+    if (isEditingElement(event.target)) return;
+    const timeline = this.timelineHostEl.querySelector<HTMLElement>(".timepoint-timeline");
+    if (!timeline?.contains(document.activeElement) && event.target !== timeline) return;
+    event.preventDefault();
+    void (event.shiftKey ? this.redoCardLayout() : this.undoCardLayout());
+  }
+
+  private async undoCardLayout(): Promise<void> {
+    const history = this.layoutHistory.takeUndo(this.selectedDate);
+    if (!history) return;
+    const current = this.currentDay?.entries.find((entry) => entry.id === history.entryId);
+    if (!current) {
+      this.layoutHistory.restoreFailedUndo(history);
+      return;
+    }
+    try {
+      await this.timePoint.repository.updateCardLayout(
+        inverseLayoutMutation(history, current.cardLayout ?? null),
+      );
+      if (history.before) current.cardLayout = history.before;
+      else delete current.cardLayout;
+      const reused = await this.timelineRenderer.refreshLayoutGeometry();
+      if (!reused) await this.refresh();
+    } catch (error) {
+      this.layoutHistory.restoreFailedUndo(history);
+      new Notice(error instanceof Error ? error.message : t("notice.layoutFailure"));
+    }
+  }
+
+  private async redoCardLayout(): Promise<void> {
+    const history = this.layoutHistory.takeRedo(this.selectedDate);
+    if (!history) return;
+    const current = this.currentDay?.entries.find((entry) => entry.id === history.entryId);
+    if (!current) {
+      this.layoutHistory.restoreFailedRedo(history);
+      return;
+    }
+    try {
+      await this.timePoint.repository.updateCardLayout(
+        redoLayoutMutation(history, current.cardLayout ?? null),
+      );
+      if (history.after) current.cardLayout = history.after;
+      else delete current.cardLayout;
+      const reused = await this.timelineRenderer.refreshLayoutGeometry();
+      if (!reused) await this.refresh();
+    } catch (error) {
+      this.layoutHistory.restoreFailedRedo(history);
+      new Notice(error instanceof Error ? error.message : t("notice.layoutFailure"));
+    }
   }
 
   private updateDateHeader(): void {
@@ -660,6 +1243,15 @@ export class TimePointView extends ItemView {
         .setDisabled(this.timelineZoom >= MAX_TIMELINE_ZOOM)
         .onClick(() => void this.setTimelineZoom(stepTimelineZoom(this.timelineZoom, 1))),
     );
+    menu.addItem((item) =>
+      item
+        .setTitle(
+          t(this.currentDay?.viewState?.relationsEnabled ? "relations.hide" : "relations.show"),
+        )
+        .setIcon("git-fork")
+        .setChecked(this.currentDay?.viewState?.relationsEnabled === true)
+        .onClick(() => void this.toggleRelations()),
+    );
     menu.addSeparator();
     if (this.currentDay?.storageLayout === "entry-files") {
       menu.addItem((item) =>
@@ -744,4 +1336,30 @@ function addOption(select: HTMLSelectElement, value: string, text: string): void
 
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+}
+
+function isEditingElement(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    Boolean(target.closest("input, textarea, select, [contenteditable='true']"))
+  );
+}
+
+function escapeSelectorValue(value: string): string {
+  return value.replace(/["\\]/gu, "\\$&");
+}
+
+function cardLayoutsEqual(
+  left: TimePointCardLayout | null,
+  right: TimePointCardLayout | null,
+): boolean {
+  if (left === null || right === null) return left === right;
+  return (
+    left.schemaVersion === right.schemaVersion &&
+    left.x === right.x &&
+    left.y === right.y &&
+    left.width === right.width &&
+    left.height === right.height &&
+    left.updatedAt === right.updatedAt
+  );
 }

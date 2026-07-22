@@ -1,4 +1,4 @@
-import { App, Notice, Plugin } from "obsidian";
+import { App, Notice, Plugin, TFile, TFolder, requestUrl } from "obsidian";
 import { registerEmbeddedTimePointProcessor } from "./embedded";
 import { t } from "./i18n";
 import {
@@ -8,7 +8,14 @@ import {
   type ImportPlan,
   type ParsedImport,
 } from "./import-export";
-import type { TimePointEntry } from "./model/types";
+import type {
+  TimePointDayViewState,
+  TimePointEntry,
+  TimePointRelationGraph,
+  TimePointRelationCard,
+} from "./model/types";
+import { RelationService } from "./relations";
+import { ExternalSnapshotService, sha256Hex } from "./services/ExternalSnapshotService";
 import { ExportService, type ExportFormat } from "./services/ExportService";
 import {
   DEFAULT_SETTINGS,
@@ -21,10 +28,15 @@ import { getLocalTimezone, isValidDateString, todayDateString } from "./utils/ti
 import { ImportModal, type ImportPreviewSummary } from "./views/ImportModal";
 import { ExportModal } from "./views/ExportModal";
 import { TIMEPOINT_VIEW_TYPE, TimePointView } from "./views/TimePointView";
+import {
+  ExternalSnapshotConsentModal,
+  type SnapshotConsentDecision,
+} from "./views/ExternalSnapshotConsentModal";
 
 interface PersistedPluginData extends Partial<TimePointSettings> {
   lastOpenedDate?: string;
   readyNoticeShown?: boolean;
+  externalSnapshotConsent?: SnapshotConsentDecision;
 }
 
 interface SettingsController {
@@ -36,10 +48,14 @@ export default class TimePointPlugin extends Plugin {
   override settings: TimePointSettings = { ...DEFAULT_SETTINGS };
   repository!: DayFileRepository;
   private exportService!: ExportService;
+  private relationService!: RelationService;
+  private snapshotService!: ExternalSnapshotService;
   private lastOpenedDate = "";
   private lastDeleted: TimePointEntry | null = null;
   private refreshTimer: number | null = null;
   private readyNoticeShown = false;
+  externalSnapshotConsent: SnapshotConsentDecision = "dismissed";
+  private readonly snapshotAttempts = new Map<string, number>();
 
   override async onload(): Promise<void> {
     const data = (await this.loadData()) as PersistedPluginData | null;
@@ -47,6 +63,10 @@ export default class TimePointPlugin extends Plugin {
     this.lastOpenedDate =
       data?.lastOpenedDate && isValidDateString(data.lastOpenedDate) ? data.lastOpenedDate : "";
     this.readyNoticeShown = data?.readyNoticeShown === true;
+    this.externalSnapshotConsent =
+      data?.externalSnapshotConsent === "granted" || data?.externalSnapshotConsent === "declined"
+        ? data.externalSnapshotConsent
+        : "dismissed";
 
     this.repository = new DayFileRepository(this.app.vault, {
       getStorageFolder: () => this.settings.storageFolder,
@@ -59,6 +79,11 @@ export default class TimePointPlugin extends Plugin {
       () => this.settings.exportFolder,
       (file) => this.app.fileManager.trashFile(file),
     );
+    this.relationService = new RelationService(this.app, this.repository);
+    this.snapshotService = new ExternalSnapshotService({
+      vault: this.app.vault,
+      request: (request) => requestUrl(request),
+    });
 
     this.registerView(TIMEPOINT_VIEW_TYPE, (leaf) => new TimePointView(leaf, this));
     registerEmbeddedTimePointProcessor(this);
@@ -83,7 +108,119 @@ export default class TimePointPlugin extends Plugin {
       ...this.settings,
       lastOpenedDate: this.lastOpenedDate,
       readyNoticeShown: this.readyNoticeShown,
+      externalSnapshotConsent: this.externalSnapshotConsent,
     });
+  }
+
+  async buildRelationGraph(
+    entries: readonly TimePointEntry[],
+    state: TimePointDayViewState,
+  ): Promise<TimePointRelationGraph> {
+    const graph = await this.relationService.buildDayGraph(entries, state);
+    await Promise.all(
+      graph.cards
+        .filter((card) => card.kind === "external-url")
+        .map(async (card) => {
+          const id = await sha256Hex(card.target);
+          const snapshot = await this.snapshotService.readSnapshot(id);
+          if (!snapshot) return;
+          card.snapshotId = snapshot.id;
+          card.title = snapshot.title;
+          card.description = snapshot.description;
+          if (snapshot.previewPath) card.previewPath = snapshot.previewPath;
+        }),
+    );
+    return graph;
+  }
+
+  async ensureExternalSnapshotConsent(): Promise<boolean> {
+    if (this.externalSnapshotConsent === "granted") return true;
+    if (this.externalSnapshotConsent === "declined") return false;
+    const decision = await new Promise<SnapshotConsentDecision>((resolve) => {
+      new ExternalSnapshotConsentModal(this.app, this.settings.appearanceMode, resolve).open();
+    });
+    if (decision === "granted" || decision === "declined") {
+      this.externalSnapshotConsent = decision;
+      await this.saveSettings();
+    }
+    return decision === "granted";
+  }
+
+  async setExternalSnapshotConsent(decision: SnapshotConsentDecision): Promise<void> {
+    this.externalSnapshotConsent = decision;
+    if (decision === "granted") this.snapshotAttempts.clear();
+    await this.saveSettings();
+  }
+
+  /** Hydrate URL cards after the local graph is already visible. */
+  async hydrateExternalRelations(
+    graph: TimePointRelationGraph,
+    entries: readonly TimePointEntry[],
+  ): Promise<boolean> {
+    const externalCards = graph.cards.filter((card) => card.kind === "external-url");
+    const associations = new Map(entries.map((entry) => [entry.id, new Set<string>()]));
+    let changed = false;
+    await Promise.all(
+      externalCards.map(async (card) => {
+        const lastAttempt = this.snapshotAttempts.get(card.target) ?? 0;
+        const allowNetwork =
+          this.externalSnapshotConsent === "granted" && Date.now() - lastAttempt >= 60_000;
+        if (allowNetwork) this.snapshotAttempts.set(card.target, Date.now());
+        const result = await this.snapshotService.getOrCreate(
+          card.target,
+          card.sourceEntryIds,
+          allowNetwork,
+        );
+        if (!result.snapshot) return;
+        if (card.snapshotId !== result.snapshot.id) changed = true;
+        card.snapshotId = result.snapshot.id;
+        card.title = result.snapshot.title;
+        card.description = result.snapshot.description;
+        if (result.snapshot.previewPath) card.previewPath = result.snapshot.previewPath;
+        for (const entryId of card.sourceEntryIds) {
+          associations.get(entryId)?.add(result.snapshot.id);
+        }
+      }),
+    );
+    await Promise.all(
+      entries.map(async (entry) => {
+        const desired = [...(associations.get(entry.id) ?? [])].sort();
+        if (JSON.stringify(desired) === JSON.stringify([...(entry.linkSnapshotIds ?? [])].sort())) {
+          return;
+        }
+        await this.repository.updateLinkSnapshotIds(entry, desired);
+        changed = true;
+      }),
+    );
+    return changed;
+  }
+
+  async refreshExternalSnapshot(
+    card: TimePointRelationCard,
+    entries: readonly TimePointEntry[],
+  ): Promise<boolean> {
+    if (card.kind !== "external-url" || !(await this.ensureExternalSnapshotConsent())) return false;
+    this.snapshotAttempts.delete(card.target);
+    const result = await this.snapshotService.getOrCreate(
+      card.target,
+      card.sourceEntryIds,
+      true,
+      true,
+    );
+    if (result.status !== "fetched" || !result.snapshot) {
+      throw new Error(result.reason ?? t("relations.snapshotFailure"));
+    }
+    await Promise.all(
+      entries
+        .filter((entry) => card.sourceEntryIds.includes(entry.id))
+        .map((entry) =>
+          this.repository.updateLinkSnapshotIds(entry, [
+            ...(entry.linkSnapshotIds ?? []),
+            result.snapshot?.id ?? "",
+          ]),
+        ),
+    );
+    return true;
   }
 
   getInitialDate(): string {
@@ -129,6 +266,11 @@ export default class TimePointPlugin extends Plugin {
     for (const leaf of this.app.workspace.getLeavesOfType(TIMEPOINT_VIEW_TYPE)) {
       if (leaf.view instanceof TimePointView) void leaf.view.refresh();
     }
+  }
+
+  /** Coalesce an explicit UI mutation with the matching Vault modify event. */
+  requestRefresh(): void {
+    this.scheduleRefresh();
   }
 
   rememberDeleted(entry: TimePointEntry): void {
@@ -181,11 +323,11 @@ export default class TimePointPlugin extends Plugin {
   }
 
   async validateData(): Promise<string> {
-    const prefix = `${this.settings.storageFolder.replace(/\/+$/u, "")}/`;
+    const storageFolder = this.settings.storageFolder.replace(/\/+$/u, "");
+    const root = this.app.vault.getFolderByPath(storageFolder);
+    if (!root) return t("validation.none");
     const dates = new Set(
-      this.app.vault
-        .getMarkdownFiles()
-        .filter((file) => file.path.startsWith(prefix))
+      markdownFilesInFolder(root)
         .map((file) => dateFromStoragePath(file.path))
         .filter((date): date is string => date !== null),
     );
@@ -286,12 +428,25 @@ export default class TimePointPlugin extends Plugin {
   private registerVaultRefreshEvents(): void {
     const consider = (path: string): void => {
       const prefix = `${this.settings.storageFolder.replace(/\/+$/u, "")}/`;
-      if (path.startsWith(prefix) && dateFromStoragePath(path)) {
+      const snapshotsPrefix = "TimePoint/Snapshots/";
+      if (
+        (path.startsWith(prefix) && dateFromStoragePath(path)) ||
+        path.startsWith(snapshotsPrefix)
+      ) {
         this.scheduleRefresh();
       }
     };
     this.registerEvent(this.app.vault.on("create", (file) => consider(file.path)));
-    this.registerEvent(this.app.vault.on("modify", (file) => consider(file.path)));
+    this.registerEvent(
+      this.app.vault.on("modify", (file) => {
+        void this.repository
+          .classifyManagedViewStateChange(file)
+          .then((change) => {
+            if (change === "none") consider(file.path);
+          })
+          .catch(() => consider(file.path));
+      }),
+    );
     this.registerEvent(this.app.vault.on("delete", (file) => consider(file.path)));
     this.registerEvent(
       this.app.vault.on("rename", (file, oldPath) => {
@@ -403,4 +558,18 @@ function dateFromStoragePath(path: string): string | null {
   const match = /\/(\d{4}-\d{2}-\d{2})(?:\.md|\/[^/]+\.md)$/u.exec(path);
   const date = match?.[1];
   return date && isValidDateString(date) ? date : null;
+}
+
+function markdownFilesInFolder(root: TFolder): TFile[] {
+  const files: TFile[] = [];
+  const pending = [root];
+  while (pending.length > 0) {
+    const folder = pending.pop();
+    if (!folder) continue;
+    for (const child of folder.children) {
+      if (child instanceof TFile && child.extension.toLowerCase() === "md") files.push(child);
+      else if (child instanceof TFolder) pending.push(child);
+    }
+  }
+  return files;
 }

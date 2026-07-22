@@ -3,10 +3,10 @@
 ## Canonical ownership
 
 Markdown inside the vault is the source of truth. Settings and the last-opened date may live in
-plugin `data.json`; event bodies, timestamps, IDs, and tags do not. Pixel positions, card heights,
-clipping, and layout columns are always derived at runtime.
+plugin `data.json`; event bodies, timestamps, IDs, tags, and durable card layout do not. Automatic
+layout, responsive clamps, clipping, and measured Markdown height remain runtime-only.
 
-Version 0.5 stores a day as a folder without changing event Schema 1:
+Version 0.7 stores a day as a folder without changing event Schema 1:
 
 ```text
 TimePoint/Days/YYYY/MM/YYYY-MM-DD/
@@ -57,6 +57,31 @@ body after frontmatter is user Markdown.
 
 `minuteOfDay` is derived in memory. `24:00` is a visual axis endpoint, not a persisted event time.
 
+## Optional card layout extension
+
+Moving or resizing a main-timeline card adds an independent display extension to that event's
+frontmatter. It does not alter event Schema 1, `time`, body, tags, or business `updatedAt`:
+
+```yaml
+timepoint-card-schema: 1
+timepoint-card-x: 0.5
+timepoint-card-y: 0.333333
+timepoint-card-width: 0.45
+timepoint-card-height: 180
+timepoint-card-updated-at: "2026-07-21T12:00:00.000Z"
+```
+
+`x` and `y` are normalized card-center preferences in the logical card/day canvas (`0…1`). Width
+is a fraction of the available card canvas (`0.2…1`). Height is a 100% zoom logical height
+(`72…720` px). Responsive leaves temporarily clamp the resolved rectangle without overwriting the
+wide-layout preference. Missing fields mean automatic density layout. Reset deletes all six
+fields. Invalid values are diagnosed and ignored; safe numeric values are clamped, and the event
+falls back to automatic layout rather than becoming unreadable.
+
+The optional `timepoint-link-snapshots` array contains SHA-256 snapshot IDs currently associated
+with external links in that event. Relationship refresh removes stale associations but never
+silently deletes the cache folder.
+
 ## Portable day index
 
 `_Timeline.md` contains `timepoint-layout: entry-files`, the date, a fenced `timepoint` block, and
@@ -65,7 +90,35 @@ links remain useful. Copy the dated folder into the matching TimePoint hierarchy
 to transfer that day and retain stable IDs.
 
 The index is derived and may be rebuilt after event mutations. Durable user content belongs in the
-event notes, not in generated index sections.
+event notes, not in generated index sections. TimePoint preserves one managed display block:
+
+```text
+<!-- timepoint:view-state
+{"schemaVersion":1,"modes":{"elastic":{"zoom":1,"centerX":0.5,"centerY":0},"realtime":{"zoom":1,"centerX":0.5,"centerY":0}},"minimapExpanded":true,"relationsEnabled":false,"stackOrder":[],"referenceCards":{}}
+-->
+```
+
+The validated block remembers separate Elastic/Real-time zoom and normalized viewport centers,
+the wide-screen minimap preference, the daily relationship toggle, event/reference stacking, and
+reference-card layout/expansion. Zoom is clamped to `0.5…3`; reference cards are capped at 50 and
+stack entries at 500. A future view-state schema is preserved but ignored and never blocks event
+reading. Duplicate/malformed managed blocks block display-state writes rather than guessing.
+
+## External snapshot cache
+
+After explicit networking consent, a completed external metadata snapshot uses:
+
+```text
+TimePoint/Snapshots/<normalized-url-sha256>/
+├── snapshot.md
+└── preview.webp
+```
+
+The Markdown marker contains the original/normalized public HTTPS URL, escaped truncated title and
+description, fetch time, content hash, source event IDs, and optional preview path. It is written
+last. There is no stored script or full page HTML. The optional image is a validated size-limited
+WebP. A matching complete marker is a cache hit and prevents automatic refetch; refresh is
+explicit.
 
 ## Legacy Schema 1 compatibility
 
@@ -112,6 +165,9 @@ External or sync changes therefore cause a conflict message rather than a silent
 - Day exports remain compatible as Markdown, JSON, and RFC4180 CSV.
 - Inclusive date ranges use independent `timepoint-range-schema: 1` Markdown/JSON manifests; CSV
   carries a date per row, and portable export recreates the canonical folder tree.
+- Markdown and JSON preserve card layout/snapshot metadata. CSV exposes optional card fields but is
+  not a complete canvas-state format. Portable export preserves event extensions, daily view
+  state, relationship layout, and used completed snapshots.
 - Error-level diagnostics block export so a partial recovery is never presented as complete data.
 
 The import preview fingerprint must still match a fresh vault read at commit time. Repository

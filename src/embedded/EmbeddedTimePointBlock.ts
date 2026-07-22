@@ -139,6 +139,7 @@ export class EmbeddedTimePointBlock extends MarkdownRenderChild {
           },
           interactionMode: this.interactionMode,
           timelineScale: this.timelineZoom,
+          dayViewState: day.viewState,
         },
       );
       if (token !== this.renderToken) return;
@@ -251,7 +252,16 @@ export class EmbeddedTimePointBlock extends MarkdownRenderChild {
       }
     };
     this.registerEvent(this.app.vault.on("create", (file) => consider(file.path)));
-    this.registerEvent(this.app.vault.on("modify", (file) => consider(file.path)));
+    this.registerEvent(
+      this.app.vault.on("modify", (file) => {
+        void this.repository
+          .classifyManagedViewStateChange(file)
+          .then((change) => {
+            if (change !== "viewport-only") consider(file.path);
+          })
+          .catch(() => consider(file.path));
+      }),
+    );
     this.registerEvent(this.app.vault.on("delete", (file) => consider(file.path)));
     this.registerEvent(
       this.app.vault.on("rename", (file, oldPath) => consider(oldPath, file.path)),

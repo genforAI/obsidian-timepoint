@@ -1,5 +1,13 @@
-import type { ParseDiagnostic, TimePointEntry } from "../model/types";
+import type { ParseDiagnostic, TimePointCardLayout, TimePointEntry } from "../model/types";
 import { isValidDateString, isValidStoredTime, timeToMinuteOfDay } from "../utils/time";
+import {
+  CARD_LAYOUT_FIELDS,
+  LINK_SNAPSHOT_FIELD,
+  parseCardLayoutFrontmatter,
+  parseSnapshotIds,
+  sanitizeCardLayout,
+} from "./CardLayoutMetadata";
+import { defaultDayViewState, parseDayViewState, serializeDayViewStateBlock } from "./DayViewState";
 
 export const ENTRY_FILE_SCHEMA_VERSION = 1 as const;
 export const DAY_INDEX_SCHEMA_VERSION = 2 as const;
@@ -17,6 +25,8 @@ const KNOWN_FIELDS = new Set([
   "updatedAt",
   "tags",
   "source",
+  ...CARD_LAYOUT_FIELDS,
+  LINK_SNAPSHOT_FIELD,
 ]);
 const entryFileSnapshots = new WeakMap<TimePointEntry, string>();
 
@@ -53,6 +63,10 @@ export function serializeStandaloneEntry(entry: TimePointEntry, eol = "\n"): str
     `updatedAt: ${JSON.stringify(entry.updatedAt)}`,
     `tags: ${JSON.stringify(entry.tags)}`,
     ...(entry.source ? [`source: ${JSON.stringify(entry.source)}`] : []),
+    ...(entry.cardLayout ? serializeCardLayoutLines(entry.cardLayout) : []),
+    ...(entry.linkSnapshotIds?.length
+      ? [`${LINK_SNAPSHOT_FIELD}: ${JSON.stringify([...new Set(entry.linkSnapshotIds)].sort())}`]
+      : []),
     "---",
     "",
   ];
@@ -99,6 +113,77 @@ export function updateStandaloneEntryMarkdown(
     .join(eol);
   const canonicalBody = canonical.slice(FRONTMATTER_PATTERN.exec(canonical)?.[0].length ?? 0);
   return `---${eol}${mergedFrontmatter}${eol}---${eol}${canonicalBody.replace(/^(?:\r?\n)+/u, "")}`;
+}
+
+/**
+ * Change only the optional card-layout YAML extension. The event body, time,
+ * tags, business timestamps and unrelated frontmatter remain byte-for-byte.
+ */
+export function updateStandaloneCardLayoutMarkdown(
+  currentMarkdown: string,
+  layout: TimePointCardLayout | null,
+): string {
+  const frontmatter = FRONTMATTER_PATTERN.exec(currentMarkdown);
+  if (!frontmatter) throw new Error("Entry note has no closed YAML frontmatter.");
+  const safe = layout ? sanitizeCardLayout(layout) : null;
+  if (layout && !safe) throw new Error("Cannot persist an invalid TimePoint card layout.");
+  const eol = detectEol(currentMarkdown);
+  const lines = (frontmatter[1] ?? "").split(/\r?\n/u);
+  const preserved: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    const property = /^([A-Za-z0-9_-]+):/u.exec(line)?.[1];
+    if (
+      !property ||
+      !CARD_LAYOUT_FIELDS.includes(property as (typeof CARD_LAYOUT_FIELDS)[number])
+    ) {
+      preserved.push(line);
+      continue;
+    }
+    while (index + 1 < lines.length && /^[ \t]+/u.test(lines[index + 1] ?? "")) index += 1;
+  }
+  const nextFrontmatter = [
+    ...trimBlankEdges(preserved),
+    ...(safe ? serializeCardLayoutLines(safe) : []),
+  ].join(eol);
+  const trailingEol = frontmatter[0].endsWith(eol) ? eol : "";
+  const suffix = currentMarkdown.slice(
+    frontmatter.index + frontmatter[0].length - trailingEol.length,
+  );
+  const bom = currentMarkdown.startsWith("\uFEFF") ? "\uFEFF" : "";
+  return `${bom}---${eol}${nextFrontmatter}${eol}---${suffix}`;
+}
+
+/** Change only completed external-snapshot associations. */
+export function updateStandaloneSnapshotIdsMarkdown(
+  currentMarkdown: string,
+  ids: readonly string[],
+): string {
+  const frontmatter = FRONTMATTER_PATTERN.exec(currentMarkdown);
+  if (!frontmatter) throw new Error("Entry note has no closed YAML frontmatter.");
+  const safe = parseSnapshotIds(ids);
+  const eol = detectEol(currentMarkdown);
+  const lines = (frontmatter[1] ?? "").split(/\r?\n/u);
+  const preserved: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    const property = /^([A-Za-z0-9_-]+):/u.exec(line)?.[1];
+    if (property !== LINK_SNAPSHOT_FIELD) {
+      preserved.push(line);
+      continue;
+    }
+    while (index + 1 < lines.length && /^[ \t]+/u.test(lines[index + 1] ?? "")) index += 1;
+  }
+  const nextFrontmatter = [
+    ...trimBlankEdges(preserved),
+    ...(safe.length ? [`${LINK_SNAPSHOT_FIELD}: ${JSON.stringify(safe)}`] : []),
+  ].join(eol);
+  const trailingEol = frontmatter[0].endsWith(eol) ? eol : "";
+  const suffix = currentMarkdown.slice(
+    frontmatter.index + frontmatter[0].length - trailingEol.length,
+  );
+  const bom = currentMarkdown.startsWith("\uFEFF") ? "\uFEFF" : "";
+  return `${bom}---${eol}${nextFrontmatter}${eol}---${suffix}`;
 }
 
 /** Parse TimePoint's documented YAML subset while tolerating unrelated user properties. */
@@ -183,6 +268,9 @@ export function parseStandaloneEntry(
     .replace(/^(?:[ \t]*\r?\n)+/u, "")
     .replace(/(?:\r?\n[ \t]*)+$/u, "");
 
+  const parsedLayout = parseCardLayoutFrontmatter(Object.fromEntries(parsed));
+  if (parsedLayout.warning) diagnostic("warning", "INVALID_CARD_LAYOUT", parsedLayout.warning);
+
   if (
     diagnostics.some((item) => item.severity === "error") ||
     !id ||
@@ -207,6 +295,10 @@ export function parseStandaloneEntry(
     ...(stringScalar(parsed.get("source")) ? { source: stringScalar(parsed.get("source")) } : {}),
     createdAt,
     updatedAt,
+    ...(parsedLayout.layout ? { cardLayout: parsedLayout.layout } : {}),
+    ...(parseSnapshotIds(parsed.get(LINK_SNAPSHOT_FIELD)).length
+      ? { linkSnapshotIds: parseSnapshotIds(parsed.get(LINK_SNAPSHOT_FIELD)) }
+      : {}),
   };
   entryFileSnapshots.set(entry, markdown);
   return {
@@ -243,6 +335,7 @@ export function serializeDayIndex(
   entries: readonly TimePointEntry[],
   timezone?: string,
   legacySourcePath?: string,
+  viewStateBlock?: string,
 ): string {
   const links = [...entries]
     .sort((left, right) => left.minuteOfDay - right.minuteOfDay || left.id.localeCompare(right.id))
@@ -267,11 +360,31 @@ export function serializeDayIndex(
     "editable: true",
     "```",
     "",
+    viewStateBlock ?? serializeDayViewStateBlock(defaultDayViewState()),
+    "",
     "## Event notes",
     "",
     ...(links.length > 0 ? links : ["_No events yet._"]),
     "",
   ].join("\n");
+}
+
+/** Preserve an existing valid, invalid, or future state block during index rebuild. */
+export function preservedDayViewStateBlock(markdown: string): string | undefined {
+  return parseDayViewState(markdown).rawBlock?.trimEnd();
+}
+
+function serializeCardLayoutLines(layout: TimePointCardLayout): string[] {
+  const safe = sanitizeCardLayout(layout);
+  if (!safe) throw new Error("Cannot serialize an invalid TimePoint card layout.");
+  return [
+    `timepoint-card-schema: ${safe.schemaVersion}`,
+    `timepoint-card-x: ${safe.x}`,
+    `timepoint-card-y: ${safe.y}`,
+    `timepoint-card-width: ${safe.width}`,
+    `timepoint-card-height: ${safe.height}`,
+    `timepoint-card-updated-at: ${JSON.stringify(safe.updatedAt)}`,
+  ];
 }
 
 function parseFrontmatterSubset(source: string): Map<string, unknown> {

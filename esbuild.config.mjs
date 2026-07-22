@@ -4,7 +4,7 @@ import process from "node:process";
 const production = process.argv[2] === "production";
 
 const context = await esbuild.context({
-  banner: { js: "/* TimePoint v0.5.0-beta.1 */" },
+  banner: { js: "/* TimePoint v0.7.0-beta.1 */" },
   entryPoints: ["src/main.ts"],
   bundle: true,
   external: [

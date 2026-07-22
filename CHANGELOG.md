@@ -1,5 +1,65 @@
 # Changelog
 
+## 0.7.0-beta.1 - 2026-07-21
+
+Bounded relationship cards, consent-gated external metadata snapshots, and portable graph state.
+
+- Added a per-day, default-off relationship view for same-day and cross-day TimePoint references,
+  ordinary local Markdown, and external URLs.
+- Added normalized Wiki/Markdown/HTTPS extraction, target deduplication, cycle detection, explicit
+  deeper local expansion, and hard 50-card/100-edge bounds.
+- Added movable, eight-way resizable local/day/external reference cards whose state lives only in
+  the current daily index and never modifies referenced notes.
+- Added a first-use consent gate for external snapshots. Declining keeps the full local graph and
+  inert URL placeholders.
+- Added public-HTTPS filtering, credential/local/private/reserved target blocking, two-request
+  concurrency, per-host pacing, eight-second late-result rejection, 512 KiB HTML and 2 MiB image
+  limits, detached inert metadata parsing, and PNG/JPEG/WebP MIME plus magic-byte validation.
+- Added SHA-256 cache identities, in-flight and completed-cache deduplication, explicit refresh,
+  offline retry cooldown, merged source associations, and preview-first/marker-last writes.
+- Extended Markdown, JSON, and CSV event formats with optional card/snapshot fields. Portable
+  folders now preserve daily canvas state and used completed snapshot files; stale or missing state
+  blocks the whole operation.
+- Added privacy, security, architecture, data-format, release, automated, and real-runtime
+  documentation for the optional network boundary.
+- Coalesced high-frequency card pointer samples into the newest animation frame, moved active cards
+  with a compositor transform, and deferred full overlap/minimap work until pointer-up so dragging
+  remains attached to the pointer on dense days.
+- Kept peer cards fully painted and untouched during move/resize. Overlap controls are pre-mounted
+  and hidden; completed reconciliation gives only the selected top card an opaque outline and
+  accessible `+N` chooser instead of rebuilding, clipping, or fading neighboring Markdown.
+- Added a mounted-DOM geometry path for zoom and responsive width changes, latest-only wheel-zoom
+  draining, changed-entry ResizeObserver measurement, cached relation/minimap geometry, conditional
+  style writes, visible-first connectors, and bounded deferred obstacle routing. Dense 250-card
+  zoom and window changes no longer trigger a global Markdown repaint.
+- Serialized/coalesced refresh requests and restored the exact clamped viewport after in-place
+  writes, closing delayed scroll jumps caused by layout persistence and file-change events.
+- Restored reliable native-note double activation through the pointer gesture state machine and
+  added capture-phase, frame-coalesced Command/Ctrl+wheel zoom with pointer anchoring.
+
+## 0.6.0-beta.1 - 2026-07-21
+
+Persistent two-dimensional timeline canvas without drag-to-reschedule.
+
+- Added explicit Hand mode, Space-to-pan, ordinary blank/axis-threshold panning, 6 px mouse and
+  10 px coarse-pointer gesture thresholds, interactive-control exemption, pointer capture, and
+  Escape cancellation.
+- Added visual card movement and eight edge/corner resize handles. The first gesture freezes the
+  effective automatic rectangle; pointer-up writes one optional `timepoint-card-schema: 1`
+  extension while preserving event time, body, tags, and business `updatedAt`.
+- Added manual-card overlap, automatic-card obstacle avoidance, narrow-leaf temporary clamping,
+  persistent selection stacking, coalesced daily-state writes, and layout reset/undo/redo.
+- Replaced straight connectors with deterministic SVG paths, true-time nodes, same-minute ports,
+  quiet unselected paths, selected emphasis, an axis corridor, and below-card hit-safe rendering.
+- Added per-date/per-mode 50–300% zoom and center persistence, pointer-anchored Command/Ctrl+wheel,
+  Fit, Now, and a responsive interactive minimap for nodes, event/reference cards, and viewport.
+- Added a strict hidden `timepoint:view-state` block preserved through index rebuilds and safe
+  fallbacks for invalid or future display state.
+- Added gesture, geometry, persistence, responsive, same-minute, obstacle, connector, and pressure
+  tests, including 250 total events with 100 manual cards under the frame-processing target.
+- Prevented internal viewport-state writes from triggering a full Markdown re-render, and kept the
+  minimap sticky and keyboard-navigable on long pressure canvases.
+
 ## 0.5.0-beta.1 - 2026-07-21
 
 Theme-native UI, inclusive range export, and public beta engineering.

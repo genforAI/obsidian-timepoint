@@ -10,11 +10,18 @@ import type { ParseDiagnostic, ParsedDayFile, TimePointEntry } from "../model/ty
 import {
   DAY_INDEX_BASENAME,
   entryFileName,
+  preservedDayViewStateBlock,
   serializeDayIndex,
   serializeStandaloneEntry,
   type DayFileRepository,
 } from "../storage";
 import { isValidDateString, shiftDate } from "../utils/time";
+import {
+  matchesImageMagic,
+  parseSnapshotMarkdown,
+  sha256Hex,
+  validatePublicHttpsUrl,
+} from "./ExternalSnapshotService";
 
 export type ExportScope =
   { kind: "day"; date: string } | { kind: "range"; startDate: string; endDate: string };
@@ -54,16 +61,24 @@ interface LoadedRange {
   dates: string[];
   days: ParsedDayFile[];
   entries: TimePointEntry[];
+  snapshotArtifacts: SnapshotArtifact[];
   preview: ExportPreview;
 }
 
 interface PendingFile {
   path: string;
-  content: string;
+  content: string | ArrayBuffer;
+}
+
+interface SnapshotArtifact {
+  id: string;
+  markdown: string;
+  preview?: ArrayBuffer;
 }
 
 const MAX_RANGE_DAYS = 366;
 const MAX_COPYABLE_BYTES = 2 * 1024 * 1024;
+const MAX_SNAPSHOT_PREVIEW_BYTES = 2 * 1024 * 1024;
 
 export class ExportService {
   constructor(
@@ -95,7 +110,7 @@ export class ExportService {
       );
     }
 
-    const output = this.prepareOutput(request, loaded);
+    const output = await this.prepareOutput(request, loaded);
     const created: string[] = [];
     try {
       for (const file of output.files) {
@@ -105,7 +120,11 @@ export class ExportService {
             `Export target ${file.path} appeared after preview; no partial result was kept.`,
           );
         }
-        await this.vault.create(file.path, file.content);
+        if (typeof file.content === "string") {
+          await this.vault.create(file.path, file.content);
+        } else {
+          await this.vault.createBinary(file.path, file.content);
+        }
         created.push(file.path);
       }
     } catch (error) {
@@ -120,7 +139,9 @@ export class ExportService {
       entryCount: loaded.preview.entryCount,
       files: output.files.map((file) => file.path),
       primaryPath: output.primaryPath,
-      ...(onlyFile && utf8ByteLength(onlyFile.content) <= MAX_COPYABLE_BYTES
+      ...(onlyFile &&
+      typeof onlyFile.content === "string" &&
+      utf8ByteLength(onlyFile.content) <= MAX_COPYABLE_BYTES
         ? { copyableContent: onlyFile.content }
         : {}),
     };
@@ -142,6 +163,13 @@ export class ExportService {
     const dates = enumerateExportDates(request.scope);
     const days = await Promise.all(dates.map((date) => this.repository.loadDay(date)));
     const entries = days.flatMap((day) => day.entries);
+    const snapshotIds = [
+      ...new Set(entries.flatMap((entry) => entry.linkSnapshotIds ?? [])),
+    ].sort();
+    const snapshotLoad =
+      request.format === "portable"
+        ? await this.readSnapshotArtifacts(snapshotIds)
+        : { artifacts: [] as SnapshotArtifact[], errors: [] as string[] };
     const diagnostics = days.flatMap((day, index) =>
       day.diagnostics.map((diagnostic) => ({ date: dates[index] ?? "", diagnostic })),
     );
@@ -162,6 +190,7 @@ export class ExportService {
     const errorMessages = [
       ...errors.map(({ date, diagnostic }) => formatDiagnostic(date, diagnostic)),
       ...duplicateErrors,
+      ...snapshotLoad.errors,
     ];
     const sourceFingerprint = fingerprint({
       request,
@@ -172,6 +201,13 @@ export class ExportService {
         storageLayout: day.storageLayout,
         entries: day.entries,
         diagnostics: day.diagnostics,
+        viewState: day.viewState,
+        viewStateBlock: preservedDayViewStateBlock(day.rawMarkdown),
+      })),
+      snapshots: snapshotLoad.artifacts.map((artifact) => ({
+        id: artifact.id,
+        markdown: artifact.markdown,
+        preview: artifact.preview ? binaryFingerprint(artifact.preview) : null,
       })),
     });
     const preview: ExportPreview = {
@@ -187,13 +223,13 @@ export class ExportService {
       sourceFingerprint,
       canExport: errorMessages.length === 0,
     };
-    return { dates, days, entries, preview };
+    return { dates, days, entries, snapshotArtifacts: snapshotLoad.artifacts, preview };
   }
 
-  private prepareOutput(
+  private async prepareOutput(
     request: ExportRequest,
     loaded: LoadedRange,
-  ): { files: PendingFile[]; primaryPath: string } {
+  ): Promise<{ files: PendingFile[]; primaryPath: string }> {
     const scopeLabel = exportScopeLabel(request.scope);
     const baseFolder = normalizePath(`${this.getExportFolder()}/${scopeLabel}`);
     if (request.format === "portable") {
@@ -232,11 +268,12 @@ export class ExportService {
     const root = this.nextAvailableFolder(normalizePath(`${baseFolder}/portable`));
     const files: PendingFile[] = [];
     const dayLinks: string[] = [];
-    for (const day of loaded.days) {
-      if (!day.date || day.entries.length === 0) continue;
-      const [year, month] = day.date.split("-");
-      if (!year || !month) throw new Error(`Invalid loaded date ${day.date}.`);
-      const dayFolder = normalizePath(`${root}/TimePoint/Days/${year}/${month}/${day.date}`);
+    for (const [index, day] of loaded.days.entries()) {
+      const date = day.date ?? loaded.dates[index];
+      if (!date) throw new Error("A selected export day has no recoverable date.");
+      const [year, month] = date.split("-");
+      if (!year || !month) throw new Error(`Invalid loaded date ${date}.`);
+      const dayFolder = normalizePath(`${root}/TimePoint/Days/${year}/${month}/${date}`);
       for (const entry of day.entries) {
         files.push({
           path: normalizePath(`${dayFolder}/${entryFileName(entry)}`),
@@ -246,11 +283,24 @@ export class ExportService {
       const indexPath = normalizePath(`${dayFolder}/${DAY_INDEX_BASENAME}.md`);
       files.push({
         path: indexPath,
-        content: serializeDayIndex(day.date, day.entries, day.timezone),
+        content: serializeDayIndex(
+          date,
+          day.entries,
+          day.timezone,
+          undefined,
+          preservedDayViewStateBlock(day.rawMarkdown),
+        ),
       });
       dayLinks.push(
-        `- [${day.date}](TimePoint/Days/${year}/${month}/${day.date}/${DAY_INDEX_BASENAME}.md)`,
+        `- [${date}](TimePoint/Days/${year}/${month}/${date}/${DAY_INDEX_BASENAME}.md)`,
       );
+    }
+    for (const snapshot of loaded.snapshotArtifacts) {
+      const folder = normalizePath(`${root}/TimePoint/Snapshots/${snapshot.id}`);
+      if (snapshot.preview) {
+        files.push({ path: `${folder}/preview.webp`, content: snapshot.preview });
+      }
+      files.push({ path: `${folder}/snapshot.md`, content: snapshot.markdown });
     }
     const primaryPath = normalizePath(`${root}/_TimePoint_Export.md`);
     const rangeLabel = exportScopeLabel(request.scope);
@@ -279,6 +329,64 @@ export class ExportService {
     // The human-readable root index is written last so an interrupted write is
     // never mistaken for a complete portable export.
     return { files, primaryPath };
+  }
+
+  private async readSnapshotArtifacts(
+    ids: readonly string[],
+  ): Promise<{ artifacts: SnapshotArtifact[]; errors: string[] }> {
+    const artifacts: SnapshotArtifact[] = [];
+    const errors: string[] = [];
+    for (const id of ids) {
+      const folder = `TimePoint/Snapshots/${id}`;
+      const markerPath = `${folder}/snapshot.md`;
+      const marker = this.vault.getAbstractFileByPath(markerPath);
+      if (!(marker instanceof TFile)) {
+        errors.push(
+          `Portable export requires completed snapshot ${id}, but ${markerPath} is missing.`,
+        );
+        continue;
+      }
+      const markdown = await this.vault.cachedRead(marker);
+      const snapshot = parseSnapshotMarkdown(markdown, markerPath);
+      const normalized = snapshot ? validatePublicHttpsUrl(snapshot.normalizedUrl) : null;
+      const original = snapshot ? validatePublicHttpsUrl(snapshot.originalUrl) : null;
+      if (
+        !snapshot ||
+        snapshot.id !== id ||
+        !normalized?.ok ||
+        normalized.normalizedUrl !== snapshot.normalizedUrl ||
+        !original?.ok ||
+        original.normalizedUrl !== snapshot.normalizedUrl ||
+        (await sha256Hex(snapshot.normalizedUrl)) !== id
+      ) {
+        errors.push(`Portable export requires valid completed snapshot ${id}.`);
+        continue;
+      }
+      const previewPath = `${folder}/preview.webp`;
+      if (snapshot.previewPath && snapshot.previewPath !== previewPath) {
+        errors.push(`Portable export snapshot ${id} has an unsafe preview path.`);
+        continue;
+      }
+      const previewFile = snapshot.previewPath
+        ? this.vault.getAbstractFileByPath(previewPath)
+        : null;
+      if (snapshot.previewPath && !(previewFile instanceof TFile)) {
+        errors.push(`Portable export snapshot ${id} is missing its completed WebP preview.`);
+        continue;
+      }
+      const preview =
+        previewFile instanceof TFile ? await this.vault.readBinary(previewFile) : undefined;
+      if (
+        preview &&
+        (preview.byteLength > MAX_SNAPSHOT_PREVIEW_BYTES ||
+          !matchesImageMagic(preview, "image/webp"))
+      ) {
+        errors.push(`Portable export snapshot ${id} has an invalid WebP preview.`);
+        continue;
+      }
+      artifacts.push({ id, markdown, ...(preview ? { preview } : {}) });
+    }
+    return { artifacts, errors };
   }
 
   private nextAvailablePath(preferredPath: string, extension: string): string {
@@ -363,6 +471,13 @@ function parentPath(path: string): string {
 
 function utf8ByteLength(value: string): number {
   return new TextEncoder().encode(value).byteLength;
+}
+
+function binaryFingerprint(value: ArrayBuffer): string {
+  const bytes = new Uint8Array(value);
+  let hash = 0x811c9dc5;
+  for (const byte of bytes) hash = Math.imul(hash ^ byte, 0x01000193) >>> 0;
+  return `${bytes.byteLength}:${hash.toString(16).padStart(8, "0")}`;
 }
 
 async function ensureFolder(vault: Vault, folder: string): Promise<void> {
