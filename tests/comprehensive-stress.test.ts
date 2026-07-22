@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   avoidManualCardObstacles,
+  extendedCanvasBounds,
   freezeCardGeometry,
   moveCardRect,
   rectanglesOverlap,
@@ -71,17 +72,20 @@ describe("deterministic geometry fuzz", () => {
         bounds,
         zoom,
       );
-      assertFiniteContained(resized, bounds);
+      assertFiniteContained(resized, extendedCanvasBounds(bounds));
       const frozen = freezeCardGeometry(resized, bounds, zoom, "2026-07-21T12:00:00.000Z");
       expect(frozen.x).toBeGreaterThanOrEqual(0);
       expect(frozen.x).toBeLessThanOrEqual(1);
       expect(frozen.y).toBeGreaterThanOrEqual(0);
-      expect(frozen.y).toBeLessThanOrEqual(1);
+      expect(frozen.y).toBeLessThanOrEqual(2);
       expect(frozen.width).toBeGreaterThanOrEqual(0.2);
       expect(frozen.width).toBeLessThanOrEqual(1);
       expect(frozen.height).toBeGreaterThanOrEqual(72);
       expect(frozen.height).toBeLessThanOrEqual(720);
-      assertFiniteContained(resolveStoredCardGeometry(frozen, bounds, zoom), bounds);
+      assertFiniteContained(
+        resolveStoredCardGeometry(frozen, bounds, zoom),
+        extendedCanvasBounds(bounds),
+      );
     }
   });
 

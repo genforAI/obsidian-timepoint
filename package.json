@@ -1,6 +1,6 @@
 {
   "name": "timepoint-obsidian-plugin",
-  "version": "0.8.0-beta.1",
+  "version": "0.8.0-beta.2",
   "private": true,
   "description": "A local-first daily timeline plugin for Obsidian.",
   "author": {

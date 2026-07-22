@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   avoidManualCardObstacles,
+  extendedCanvasBounds,
   findCardOverlapGroups,
   freezeCardGeometry,
   moveCardRect,
@@ -10,7 +11,7 @@ import {
   type CanvasBounds,
 } from "../src/layout/CanvasCardLayout";
 import type { ResizeHandle } from "../src/model/types";
-import { createCardLayout } from "../src/storage/CardLayoutMetadata";
+import { MAX_CANVAS_EXTENSION_RATIO, createCardLayout } from "../src/storage/CardLayoutMetadata";
 import {
   advanceCanvasGesture,
   beginCanvasGesture,
@@ -139,13 +140,14 @@ describe("manual card geometry", () => {
 
   it("supports all eight resize handles within the limits", () => {
     const start = { x: 300, y: 300, width: 360, height: 180 };
+    const canvas = extendedCanvasBounds(bounds);
     const handles: ResizeHandle[] = ["n", "ne", "e", "se", "s", "sw", "w", "nw"];
     for (const handle of handles) {
       const rect = resizeCardRect(start, handle, 2000, 2000, bounds, 1);
-      expect(rect.x).toBeGreaterThanOrEqual(bounds.left);
-      expect(rect.y).toBeGreaterThanOrEqual(bounds.top);
-      expect(rect.x + rect.width).toBeLessThanOrEqual(bounds.left + bounds.width);
-      expect(rect.y + rect.height).toBeLessThanOrEqual(bounds.top + bounds.height);
+      expect(rect.x).toBeGreaterThanOrEqual(canvas.left);
+      expect(rect.y).toBeGreaterThanOrEqual(canvas.top);
+      expect(rect.x + rect.width).toBeLessThanOrEqual(canvas.left + canvas.width);
+      expect(rect.y + rect.height).toBeLessThanOrEqual(canvas.top + canvas.height);
       expect(rect.width).toBeGreaterThanOrEqual(160);
       expect(rect.height).toBeGreaterThan(0);
     }
@@ -153,6 +155,20 @@ describe("manual card geometry", () => {
       x: bounds.left,
       y: bounds.top,
     });
+  });
+
+  it("lets a manual card park below the 00:00–24:00 axis and expand the canvas", () => {
+    const start = { x: 200, y: bounds.top + bounds.height - 100, width: 360, height: 160 };
+    const moved = moveCardRect(start, 0, 400, bounds);
+    expect(moved.y + moved.height).toBeGreaterThan(bounds.top + bounds.height);
+    expect(moved.y + moved.height).toBeLessThanOrEqual(
+      bounds.top + bounds.height * MAX_CANVAS_EXTENSION_RATIO,
+    );
+    const frozen = freezeCardGeometry(moved, bounds, 1, "2026-07-22T12:00:00.000Z");
+    expect(frozen.y).toBeGreaterThan(1);
+    expect(frozen.y).toBeLessThanOrEqual(MAX_CANVAS_EXTENSION_RATIO);
+    const resolved = resolveStoredCardGeometry(frozen, bounds, 1);
+    expect(resolved.y + resolved.height).toBeGreaterThan(bounds.top + bounds.height);
   });
 
   it("keeps stored wide preferences safe across responsive widths and 50–300% zoom", () => {
@@ -172,13 +188,13 @@ describe("manual card geometry", () => {
           responsiveBounds.left + responsiveBounds.width,
         );
         expect(rect.y + rect.height).toBeLessThanOrEqual(
-          responsiveBounds.top + responsiveBounds.height,
+          responsiveBounds.top + responsiveBounds.height * MAX_CANVAS_EXTENSION_RATIO,
         );
         const normalized = freezeCardGeometry(rect, responsiveBounds, zoom);
         expect(normalized.x).toBeGreaterThanOrEqual(0);
         expect(normalized.x).toBeLessThanOrEqual(1);
         expect(normalized.y).toBeGreaterThanOrEqual(0);
-        expect(normalized.y).toBeLessThanOrEqual(1);
+        expect(normalized.y).toBeLessThanOrEqual(MAX_CANVAS_EXTENSION_RATIO);
         expect(normalized.width).toBeGreaterThanOrEqual(0.2);
         expect(normalized.width).toBeLessThanOrEqual(1);
         expect(normalized.height).toBeGreaterThanOrEqual(72);

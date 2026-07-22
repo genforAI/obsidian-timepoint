@@ -53,7 +53,7 @@ describe("card layout metadata", () => {
         height: 5000,
         updatedAt: "2026-07-21T12:00:00.000Z",
       }),
-    ).toMatchObject({ x: 0, y: 1, width: 0.2, height: 720 });
+    ).toMatchObject({ x: 0, y: 2, width: 0.2, height: 720 });
     const incomplete = parseCardLayoutFrontmatter({
       "timepoint-card-schema": 1,
       "timepoint-card-x": 0.5,

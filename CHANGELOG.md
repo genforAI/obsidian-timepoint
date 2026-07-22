@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.0-beta.2 - 2026-07-22
+
+Manual cards can park below 24:00 and the scrollable canvas grows with them.
+
+- Separated the fixed 00:00–24:00 axis mapping from the scrollable canvas height so dragging or
+  resizing a card past the day end expands the canvas instead of clamping against a hard floor.
+- Allowed stored card `y` values up to 200% of the axis span while leaving event times unchanged.
+- Expanded the timeline height during the gesture so the pointer remains attached while parking a
+  card in the space below 24:00.
+
 ## 0.8.0-beta.1 - 2026-07-22
 
 Cross-compatible local attachments, independent vertical scale, and quieter measured previews.

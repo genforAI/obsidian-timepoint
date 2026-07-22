@@ -15,6 +15,8 @@ export const MIN_CARD_WIDTH = 0.2;
 export const MAX_CARD_WIDTH = 1;
 export const MIN_CARD_HEIGHT = 72;
 export const MAX_CARD_HEIGHT = 720;
+/** Manual cards may park below 24:00 up to one extra axis height. */
+export const MAX_CANVAS_EXTENSION_RATIO = 2;
 
 type FrontmatterRecord = Record<string, unknown>;
 
@@ -45,7 +47,7 @@ export function sanitizeCardLayout(value: unknown): TimePointCardLayout | null {
   return {
     schemaVersion: TIMEPOINT_CARD_SCHEMA_VERSION,
     x: round(clamp(x, 0, 1), 6),
-    y: round(clamp(y, 0, 1), 6),
+    y: round(clamp(y, 0, MAX_CANVAS_EXTENSION_RATIO), 6),
     width: round(clamp(width, MIN_CARD_WIDTH, MAX_CARD_WIDTH), 6),
     height: round(clamp(height, MIN_CARD_HEIGHT, MAX_CARD_HEIGHT), 2),
     updatedAt,

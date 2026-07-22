@@ -3,8 +3,10 @@ import { t } from "../i18n";
 import {
   avoidManualCardObstacles,
   calculateTimelineLayout,
+  extendedCanvasBounds,
   findCardOverlapGroups,
   freezeCardGeometry,
+  maxCanvasBottom,
   moveCardRect,
   resizeCardRect,
   resolveStoredCardGeometry,
@@ -2166,6 +2168,16 @@ export class TimelineRenderer extends Component {
         card.style.setProperty("--tp-column-width", `${rect.width}px`);
         card.style.setProperty("--tp-card-height", `${rect.height}px`);
       }
+      const neededBottom = Math.ceil(rect.y + rect.height + 44);
+      const axisBottom = Math.ceil(interaction.layout.totalHeight);
+      const maxBottom = Math.ceil(maxCanvasBottom(interaction.context.bounds));
+      const geometryBottom = Math.min(Math.max(axisBottom, neededBottom), maxBottom);
+      setStylePropertyIfChanged(timeline, "--tp-timeline-height", `${geometryBottom}px`);
+      const connectorSvg = timeline.querySelector("svg.timepoint-connectors");
+      if (connectorSvg instanceof SVGElement) {
+        const width = Math.max(1, timeline.clientWidth);
+        setAttributeIfChanged(connectorSvg, "viewBox", `0 0 ${width} ${geometryBottom}`);
+      }
       updateActiveConnector(rect);
       this.relationLayer?.refreshConnectedGeometry(activeEntry.id);
       if (this.snapshot) {
@@ -2398,7 +2410,7 @@ export class TimelineRenderer extends Component {
       });
       startScrollLeft = scrollContainer.scrollLeft;
       startScrollTop = scrollContainer.scrollTop;
-      gestureBounds = { ...interaction.context.bounds };
+      gestureBounds = extendedCanvasBounds(interaction.context.bounds);
       gestureScale = interaction.timelineScale;
       activeEntry = entry ?? null;
       this.cancelSettledConnectorRouting();

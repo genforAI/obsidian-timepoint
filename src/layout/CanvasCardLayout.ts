@@ -1,5 +1,6 @@
 import type { ResizeHandle, TimePointCardLayout } from "../model/types";
 import {
+  MAX_CANVAS_EXTENSION_RATIO,
   MAX_CARD_HEIGHT,
   MIN_CARD_HEIGHT,
   MIN_CARD_WIDTH,
@@ -37,6 +38,18 @@ export interface ConnectorRouteInput {
 export interface CardOverlapItem {
   id: string;
   rect: CanvasRect;
+}
+
+/** Axis bounds grow into a scrollable canvas so cards can park below 24:00. */
+export function extendedCanvasBounds(axisBounds: CanvasBounds): CanvasBounds {
+  return {
+    ...axisBounds,
+    height: Math.max(1, axisBounds.height * MAX_CANVAS_EXTENSION_RATIO),
+  };
+}
+
+export function maxCanvasBottom(axisBounds: CanvasBounds): number {
+  return axisBounds.top + Math.max(1, axisBounds.height * MAX_CANVAS_EXTENSION_RATIO);
 }
 
 /**
@@ -91,30 +104,35 @@ export function findCardOverlapGroups(
 
 export function resolveStoredCardGeometry(
   layout: TimePointCardLayout,
-  bounds: CanvasBounds,
+  axisBounds: CanvasBounds,
   zoom: number,
 ): ResolvedCardGeometry {
-  const width = clamp(layout.width * bounds.width, MIN_CARD_WIDTH * bounds.width, bounds.width);
+  const canvas = extendedCanvasBounds(axisBounds);
+  const width = clamp(
+    layout.width * axisBounds.width,
+    MIN_CARD_WIDTH * axisBounds.width,
+    axisBounds.width,
+  );
   const height = clamp(layout.height * zoom, MIN_CARD_HEIGHT * zoom, MAX_CARD_HEIGHT * zoom);
-  const centreX = bounds.left + layout.x * bounds.width;
-  const centreY = bounds.top + layout.y * bounds.height;
+  const centreX = axisBounds.left + layout.x * axisBounds.width;
+  const centreY = axisBounds.top + layout.y * axisBounds.height;
   return {
-    ...clampRect({ x: centreX - width / 2, y: centreY - height / 2, width, height }, bounds, true),
+    ...clampRect({ x: centreX - width / 2, y: centreY - height / 2, width, height }, canvas, true),
     manual: true,
   };
 }
 
 export function freezeCardGeometry(
   rect: CanvasRect,
-  bounds: CanvasBounds,
+  axisBounds: CanvasBounds,
   zoom: number,
   updatedAt?: string,
 ): TimePointCardLayout {
-  const safe = clampRect(rect, bounds, true);
+  const safe = clampRect(rect, extendedCanvasBounds(axisBounds), true);
   return createCardLayout({
-    x: (safe.x + safe.width / 2 - bounds.left) / Math.max(1, bounds.width),
-    y: (safe.y + safe.height / 2 - bounds.top) / Math.max(1, bounds.height),
-    width: safe.width / Math.max(1, bounds.width),
+    x: (safe.x + safe.width / 2 - axisBounds.left) / Math.max(1, axisBounds.width),
+    y: (safe.y + safe.height / 2 - axisBounds.top) / Math.max(1, axisBounds.height),
+    width: safe.width / Math.max(1, axisBounds.width),
     height: safe.height / Math.max(0.5, zoom),
     ...(updatedAt ? { updatedAt } : {}),
   });
@@ -124,9 +142,13 @@ export function moveCardRect(
   start: CanvasRect,
   deltaX: number,
   deltaY: number,
-  bounds: CanvasBounds,
+  axisBounds: CanvasBounds,
 ): CanvasRect {
-  return clampRect({ ...start, x: start.x + deltaX, y: start.y + deltaY }, bounds, true);
+  return clampRect(
+    { ...start, x: start.x + deltaX, y: start.y + deltaY },
+    extendedCanvasBounds(axisBounds),
+    true,
+  );
 }
 
 export function resizeCardRect(
@@ -134,9 +156,10 @@ export function resizeCardRect(
   handle: ResizeHandle,
   deltaX: number,
   deltaY: number,
-  bounds: CanvasBounds,
+  axisBounds: CanvasBounds,
   zoom: number,
 ): CanvasRect {
+  const canvas = extendedCanvasBounds(axisBounds);
   let left = start.x;
   let right = start.x + start.width;
   let top = start.y;
@@ -146,9 +169,9 @@ export function resizeCardRect(
   if (handle.includes("n")) top += deltaY;
   if (handle.includes("s")) bottom += deltaY;
 
-  const minimumWidth = Math.min(bounds.width, MIN_CARD_WIDTH * bounds.width);
+  const minimumWidth = Math.min(canvas.width, MIN_CARD_WIDTH * canvas.width);
   const minimumHeight = MIN_CARD_HEIGHT * zoom;
-  const maximumHeight = Math.min(bounds.height, MAX_CARD_HEIGHT * zoom);
+  const maximumHeight = Math.min(canvas.height, MAX_CARD_HEIGHT * zoom);
   if (right - left < minimumWidth) {
     if (handle.includes("w")) left = right - minimumWidth;
     else right = left + minimumWidth;
@@ -161,7 +184,7 @@ export function resizeCardRect(
     if (handle.includes("n")) top = bottom - maximumHeight;
     else bottom = top + maximumHeight;
   }
-  return clampRect({ x: left, y: top, width: right - left, height: bottom - top }, bounds, true);
+  return clampRect({ x: left, y: top, width: right - left, height: bottom - top }, canvas, true);
 }
 
 /** Manual cards are fixed obstacles; automatic cards move down deterministically. */
