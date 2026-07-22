@@ -27,19 +27,22 @@ to make a timeline fit: density changes are runtime-only preview decisions.
 | Snapshot request safety                    | Consent, public HTTPS, cache/dedupe, 2 concurrent, timeout, size/MIME/magic limits | Pass                    |
 | Portable relationship export               | Daily state and used completed preview/marker pairs survive; missing cache blocks  | Pass                    |
 | Viewport persistence under 250 cards       | Exact self-write is ignored; byte-different external index edits still refresh     | Pass                    |
+| Independent vertical density               | 40–400%, per date/mode, no event-time or canvas-zoom mutation                      | Pass                    |
+| Portable local attachments                 | One-layer paths, byte/hash/MIME checks, exported-copy rewrite, rollback            | Pass                    |
+| Adversarial Portable ZIP                   | Traversal, collisions, encryption, ZIP64, header mismatch, size and bomb rejection | Pass                    |
 
 The automated gate is `npm run check`. It covers formatting, ESLint, strict TypeScript, Vitest,
 production build, bundle evaluation/secret scan, and high-severity dependency audit.
 
-### Latest local beta verification (2026-07-21)
+### Latest local beta verification (2026-07-22)
 
-- `npm run check`: 20 files and 207/207 tests passed; formatting, ESLint, strict TypeScript,
+- `npm run check`: 21 files and 215/215 tests passed; formatting, ESLint, strict TypeScript,
   production build, bundle smoke, and audit all passed with zero reported vulnerabilities.
-- `npm run test:stress`: 8 files and 90/90 focused stress tests passed.
+- `npm run test:stress`: 8 files and 91/91 focused stress tests passed.
 - Twenty earlier shuffled full-suite seeds plus two post-optimization seeds passed. The final
-  shuffled runs were 207/207, checking for hidden order dependencies in shared state, timers,
+  shuffled runs were 215/215, checking for hidden order dependencies in shared state, timers,
   caches, and asynchronous queues.
-- Node 20 and Node 22 each passed strict TypeScript and all 207 tests using the same final source
+- Node 20 and Node 22 each passed strict TypeScript and all 215 tests using the same final source
   tree; production build and bundle smoke passed from the same candidate.
 - The automated 250-card/100-obstacle layout and connector sample stayed below the 32 ms p95 gate.
 

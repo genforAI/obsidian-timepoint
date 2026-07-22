@@ -18,6 +18,7 @@ export interface ImportPreviewSummary {
   rejectCount: number;
   dates: string[];
   planFingerprint: string;
+  attachmentCount?: number;
 }
 
 export interface ImportModalOptions {
@@ -32,6 +33,8 @@ export interface ImportModalOptions {
     strategy: ImportConflictStrategy,
     expectedPlanFingerprint: string,
   ) => Promise<ImportPreviewSummary>;
+  previewPortable: (file: File) => Promise<ImportPreviewSummary>;
+  commitPortable: (file: File, expectedPlanFingerprint: string) => Promise<ImportPreviewSummary>;
 }
 
 type ImportFormat = "auto" | "json" | "csv" | "markdown";
@@ -43,6 +46,7 @@ export class ImportModal extends Modal {
   private summaryEl!: HTMLElement;
   private importButton!: HTMLButtonElement;
   private parsed: ParsedImport | null = null;
+  private portableFile: File | null = null;
   private planFingerprint: string | null = null;
   private previewVersion = 0;
 
@@ -64,6 +68,25 @@ export class ImportModal extends Modal {
     this.contentEl.createEl("p", {
       cls: "setting-item-description",
       text: t("import.description"),
+    });
+
+    const portableField = this.contentEl.createDiv({ cls: "timepoint-editor-field" });
+    portableField.createEl("label", { text: t("import.portableZip") });
+    const portableInput = portableField.createEl("input", {
+      attr: {
+        type: "file",
+        accept: ".zip,.timepoint.zip,application/zip",
+        "aria-label": t("import.portableZip"),
+      },
+    });
+    portableInput.addEventListener("change", () => {
+      const file = portableInput.files?.[0] ?? null;
+      this.portableFile = file;
+      if (file) {
+        this.input.value = "";
+        this.parsed = null;
+        void this.updatePortablePreview(file);
+      }
     });
 
     const options = this.contentEl.createDiv({ cls: "timepoint-import-options" });
@@ -99,7 +122,10 @@ export class ImportModal extends Modal {
         spellcheck: "false",
       },
     });
-    this.input.addEventListener("input", () => void this.updatePreview());
+    this.input.addEventListener("input", () => {
+      if (this.input.value.trim()) this.portableFile = null;
+      void this.updatePreview();
+    });
 
     this.summaryEl = this.contentEl.createDiv({ cls: "timepoint-import-summary" });
     this.summaryEl.setText(t("import.waiting"));
@@ -176,14 +202,32 @@ export class ImportModal extends Modal {
     }
   }
 
+  private async updatePortablePreview(file: File): Promise<void> {
+    const version = ++this.previewVersion;
+    this.importButton.disabled = true;
+    this.planFingerprint = null;
+    this.summaryEl.setText(t("import.checking", { format: "PORTABLE ZIP" }));
+    try {
+      const summary = await this.options.previewPortable(file);
+      if (version !== this.previewVersion || this.portableFile !== file) return;
+      this.summaryEl.setText(formatSummary(summary));
+      this.planFingerprint = summary.planFingerprint;
+      this.importButton.disabled = summary.entryCount === 0 || summary.rejectCount > 0;
+    } catch (error) {
+      if (version !== this.previewVersion) return;
+      this.summaryEl.setText(error instanceof Error ? error.message : t("import.previewFailure"));
+    }
+  }
+
   private async commit(): Promise<void> {
-    const parsed = this.parsed;
     const planFingerprint = this.planFingerprint;
-    if (!parsed || !parsed.ok || parsed.issues.length > 0 || !planFingerprint) return;
+    if (!planFingerprint) return;
     this.importButton.disabled = true;
     this.importButton.setText(t("import.committing"));
     try {
-      const result = await this.options.commit(parsed, this.strategy, planFingerprint);
+      const result = this.portableFile
+        ? await this.options.commitPortable(this.portableFile, planFingerprint)
+        : await this.commitTextImport(planFingerprint);
       new Notice(t("import.complete", { summary: formatSummary(result) }));
       this.close();
     } catch (error) {
@@ -191,6 +235,13 @@ export class ImportModal extends Modal {
       this.importButton.disabled = false;
       this.importButton.setText(t("import.commit"));
     }
+  }
+
+  private async commitTextImport(planFingerprint: string): Promise<ImportPreviewSummary> {
+    const parsed = this.parsed;
+    if (!parsed || !parsed.ok || parsed.issues.length > 0)
+      throw new Error(t("import.previewFailure"));
+    return this.options.commit(parsed, this.strategy, planFingerprint);
   }
 }
 
@@ -221,5 +272,6 @@ function formatSummary(summary: ImportPreviewSummary): string {
     skipped: summary.skipCount,
     rejected: summary.rejectCount,
     conflicts: summary.conflictCount,
+    attachments: summary.attachmentCount ?? 0,
   });
 }

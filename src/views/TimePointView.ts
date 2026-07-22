@@ -34,14 +34,20 @@ import { LatestAsyncQueue } from "./latestAsyncQueue";
 import { locateNativeEditorTarget } from "./nativeEditorTarget";
 import {
   MAX_TIMELINE_ZOOM,
+  MAX_TIMELINE_VERTICAL_SCALE,
   MIN_TIMELINE_ZOOM,
+  MIN_TIMELINE_VERTICAL_SCALE,
   clampViewportOffset,
   isTimelineZoomWheel,
+  isTimelineVerticalScaleWheel,
+  normalizeTimelineVerticalScale,
   normalizeTimelineZoom,
   resolveAnchoredScrollOffset,
+  shouldPersistTimelineViewport,
   shouldRestoreStoredViewport,
   stepTimelineZoom,
   timelineZoomFromWheel,
+  timelineVerticalScaleFromWheel,
   viewportCentreRatio,
   type TimelineInteractionMode,
 } from "./timelineNavigation";
@@ -74,10 +80,14 @@ export class TimePointView extends ItemView {
   private createEntryPromise: Promise<void> | null = null;
   private interactionMode: TimelineInteractionMode = "select";
   private timelineZoom = 1;
+  private timelineVerticalScale = 1;
   private panButton: HTMLButtonElement | null = null;
   private zoomOutButton: HTMLButtonElement | null = null;
   private zoomResetButton: HTMLButtonElement | null = null;
   private zoomInButton: HTMLButtonElement | null = null;
+  private verticalScaleDownButton: HTMLButtonElement | null = null;
+  private verticalScaleResetButton: HTMLButtonElement | null = null;
+  private verticalScaleUpButton: HTMLButtonElement | null = null;
   private fitButton: HTMLButtonElement | null = null;
   private nowButton: HTMLButtonElement | null = null;
   private relationsButton: HTMLButtonElement | null = null;
@@ -228,6 +238,7 @@ export class TimePointView extends ItemView {
       const restoreViewport = shouldRestoreStoredViewport(this.viewportContextKey, viewportKey);
       if (restoreViewport) {
         this.timelineZoom = day.viewState?.modes[this.mode].zoom ?? 1;
+        this.timelineVerticalScale = day.viewState?.modes[this.mode].verticalScale ?? 1;
         this.updateNavigationControls();
       }
       this.relationGraph = day.viewState?.relationsEnabled
@@ -396,6 +407,35 @@ export class TimePointView extends ItemView {
       "click",
       () => void this.setTimelineZoom(stepTimelineZoom(this.timelineZoom, 1)),
     );
+    const verticalControls = navigation.createDiv({
+      cls: "timepoint-zoom-controls timepoint-vertical-scale-controls",
+    });
+    this.verticalScaleDownButton = this.iconButton(
+      verticalControls,
+      "chevrons-down-up",
+      t("view.verticalScaleDown"),
+    );
+    this.verticalScaleDownButton.addEventListener(
+      "click",
+      () => void this.setTimelineVerticalScale(this.timelineVerticalScale - 0.1),
+    );
+    this.verticalScaleResetButton = verticalControls.createEl("button", {
+      cls: "timepoint-icon-button timepoint-zoom-reset",
+      attr: { type: "button", "aria-label": t("view.verticalScaleReset") },
+    });
+    this.verticalScaleResetButton.addEventListener(
+      "click",
+      () => void this.setTimelineVerticalScale(1),
+    );
+    this.verticalScaleUpButton = this.iconButton(
+      verticalControls,
+      "chevrons-up-down",
+      t("view.verticalScaleUp"),
+    );
+    this.verticalScaleUpButton.addEventListener(
+      "click",
+      () => void this.setTimelineVerticalScale(this.timelineVerticalScale + 0.1),
+    );
     this.fitButton = this.iconButton(navigation, "scan", t("view.fitWindow"));
     this.fitButton.addClass("timepoint-fit-button");
     this.fitButton.addEventListener("click", () => void this.fitTimelineToWindow());
@@ -458,6 +498,8 @@ export class TimePointView extends ItemView {
     nextZoom: number,
     anchor?: { clientX: number; clientY: number },
   ): Promise<void> {
+    const dateAtStart = this.selectedDate;
+    const modeAtStart = this.mode;
     const zoomStartedAt = performance.now();
     const normalized = normalizeTimelineZoom(nextZoom);
     if (normalized === this.timelineZoom) return;
@@ -484,7 +526,13 @@ export class TimePointView extends ItemView {
     const anchorVersion = ++this.zoomAnchorVersion;
     this.zoomAnchorFrame = window.requestAnimationFrame(() => {
       this.zoomAnchorFrame = null;
-      if (!this.opened || anchorVersion !== this.zoomAnchorVersion) return;
+      if (
+        !this.opened ||
+        anchorVersion !== this.zoomAnchorVersion ||
+        dateAtStart !== this.selectedDate ||
+        modeAtStart !== this.mode
+      )
+        return;
       this.scrollEl.scrollTop = resolveAnchoredScrollOffset(
         previousScrollTop,
         previousScrollHeight,
@@ -499,10 +547,43 @@ export class TimePointView extends ItemView {
         this.scrollEl.clientWidth,
         anchorX,
       );
-      this.queueCurrentViewportState();
+      this.queueCurrentViewportState(true);
       this.timelineHostEl.dataset.tpLastZoomMs = (
         Math.round((performance.now() - zoomStartedAt) * 10) / 10
       ).toFixed(1);
+    });
+  }
+
+  private async setTimelineVerticalScale(
+    nextScale: number,
+    anchor?: { clientX: number; clientY: number },
+  ): Promise<void> {
+    const dateAtStart = this.selectedDate;
+    const modeAtStart = this.mode;
+    const normalized = normalizeTimelineVerticalScale(nextScale);
+    if (normalized === this.timelineVerticalScale) return;
+    const previousScrollTop = this.scrollEl.scrollTop;
+    const previousScrollHeight = this.scrollEl.scrollHeight;
+    const clientHeight = this.scrollEl.clientHeight;
+    const bounds = this.scrollEl.getBoundingClientRect();
+    const anchorY = anchor
+      ? Math.min(clientHeight, Math.max(0, anchor.clientY - bounds.top))
+      : clientHeight / 2;
+    this.timelineVerticalScale = normalized;
+    this.updateCurrentViewportState({ verticalScale: normalized });
+    this.updateNavigationControls();
+    const reused = await this.timelineRenderer.updateVerticalScale();
+    if (!reused) await this.refresh();
+    window.requestAnimationFrame(() => {
+      if (!this.opened || dateAtStart !== this.selectedDate || modeAtStart !== this.mode) return;
+      this.scrollEl.scrollTop = resolveAnchoredScrollOffset(
+        previousScrollTop,
+        previousScrollHeight,
+        this.scrollEl.scrollHeight,
+        this.scrollEl.clientHeight,
+        anchorY,
+      );
+      this.queueCurrentViewportState(true);
     });
   }
 
@@ -523,6 +604,16 @@ export class TimePointView extends ItemView {
     }
     if (this.zoomOutButton) this.zoomOutButton.disabled = this.timelineZoom <= MIN_TIMELINE_ZOOM;
     if (this.zoomInButton) this.zoomInButton.disabled = this.timelineZoom >= MAX_TIMELINE_ZOOM;
+    if (this.verticalScaleResetButton) {
+      this.verticalScaleResetButton.setText(`V${Math.round(this.timelineVerticalScale * 100)}%`);
+      this.verticalScaleResetButton.setAttr("title", t("view.verticalScaleReset"));
+    }
+    if (this.verticalScaleDownButton)
+      this.verticalScaleDownButton.disabled =
+        this.timelineVerticalScale <= MIN_TIMELINE_VERTICAL_SCALE;
+    if (this.verticalScaleUpButton)
+      this.verticalScaleUpButton.disabled =
+        this.timelineVerticalScale >= MAX_TIMELINE_VERTICAL_SCALE;
   }
 
   private selectEntry(entry: TimePointEntry | null): void {
@@ -686,11 +777,12 @@ export class TimePointView extends ItemView {
     viewState.modes[this.mode] = { ...current, ...patch };
   }
 
-  private queueCurrentViewportState(): void {
+  private queueCurrentViewportState(force = false): void {
     if (!this.opened || !this.currentDay?.viewState || !this.scrollEl) return;
     const previous = this.currentDay.viewState.modes[this.mode];
     const viewport: TimelineViewportState = {
       zoom: this.timelineZoom,
+      verticalScale: this.timelineVerticalScale,
       centerX: viewportCentreRatio(
         this.scrollEl.scrollLeft,
         this.scrollEl.scrollWidth,
@@ -702,13 +794,7 @@ export class TimePointView extends ItemView {
         this.scrollEl.clientHeight,
       ),
     };
-    if (
-      previous.zoom === viewport.zoom &&
-      Math.abs(previous.centerX - viewport.centerX) < 0.0001 &&
-      Math.abs(previous.centerY - viewport.centerY) < 0.0001
-    ) {
-      return;
-    }
+    if (!shouldPersistTimelineViewport(previous, viewport, force)) return;
     this.currentDay.viewState.modes[this.mode] = viewport;
     this.queueDayStatePatch(this.selectedDate, { modes: { [this.mode]: viewport } });
   }
@@ -766,6 +852,21 @@ export class TimePointView extends ItemView {
   }
 
   private handleZoomWheel(event: WheelEvent): void {
+    if (isTimelineVerticalScaleWheel(event.altKey, event.metaKey, event.ctrlKey)) {
+      event.preventDefault();
+      event.stopPropagation();
+      const next = timelineVerticalScaleFromWheel(
+        this.timelineVerticalScale,
+        event.deltaY,
+        event.deltaMode,
+        this.scrollEl.clientHeight,
+      );
+      void this.setTimelineVerticalScale(next, {
+        clientX: event.clientX,
+        clientY: event.clientY,
+      });
+      return;
+    }
     if (!isTimelineZoomWheel(event.metaKey, event.ctrlKey)) return;
     event.preventDefault();
     event.stopPropagation();

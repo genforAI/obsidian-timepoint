@@ -19,7 +19,7 @@ export interface ParsedDayViewState {
 }
 
 export function defaultTimelineViewportState(): TimelineViewportState {
-  return { zoom: 1, centerX: 0.5, centerY: 0 };
+  return { zoom: 1, centerX: 0.5, centerY: 0, verticalScale: 1 };
 }
 
 export function defaultDayViewState(): TimePointDayViewState {
@@ -166,11 +166,19 @@ function sanitizeViewport(value: unknown): TimelineViewportState | null {
   const zoom = finiteNumber(value.zoom);
   const centerX = finiteNumber(value.centerX);
   const centerY = finiteNumber(value.centerY);
-  if (!Number.isFinite(zoom) || !Number.isFinite(centerX) || !Number.isFinite(centerY)) return null;
+  const verticalScale = value.verticalScale === undefined ? 1 : finiteNumber(value.verticalScale);
+  if (
+    !Number.isFinite(zoom) ||
+    !Number.isFinite(centerX) ||
+    !Number.isFinite(centerY) ||
+    !Number.isFinite(verticalScale)
+  )
+    return null;
   return {
     zoom: round(clamp(zoom, 0.5, 3), 4),
     centerX: round(clamp(centerX, 0, 1), 6),
     centerY: round(clamp(centerY, 0, 1), 6),
+    verticalScale: round(clamp(verticalScale, 0.4, 4), 4),
   };
 }
 

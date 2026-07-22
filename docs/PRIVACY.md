@@ -1,6 +1,6 @@
 # Privacy and local-first statement
 
-TimePoint `0.7.0-beta.1`:
+TimePoint `0.8.0-beta.1`:
 
 - stores every event in an independent, readable Markdown file in the user's Obsidian vault;
 - stores preferences and the last-opened date in Obsidian's normal plugin data file;
@@ -15,9 +15,15 @@ TimePoint `0.7.0-beta.1`:
 The beta is nevertheless marked desktop-only because physical mobile interaction has not passed
 the release gate. This is a support claim, not a technical permission requirement.
 
-Export reads only the selected local dates and used completed snapshot cache entries. It writes to
-the configured Vault folder, makes no network request, and exposes clipboard actions only after an
-explicit user click. No automatic clipboard read occurs.
+Export reads only the selected local dates, directly referenced non-Markdown files one layer deep,
+and used completed snapshot cache entries. It writes to the configured Vault folder, makes no
+network request, and exposes clipboard actions only after an explicit user click. Attachment paths
+are rewritten only in exported copies; source Vault notes are unchanged. No automatic clipboard
+read occurs.
+
+Portable ZIP import reads a user-selected local archive, validates it before decompression and
+again before commit, and never sends archive contents over the network. It refuses to replace an
+existing Vault path and rolls back newly created files after a caught failure.
 
 ## Optional external-link snapshots
 

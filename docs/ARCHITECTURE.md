@@ -18,7 +18,7 @@ use. External snapshots use only Obsidian `requestUrl` after explicit consent.
 | Layout      | `src/layout/`                                                               | Time scales, card geometry, obstacle avoidance, connector routing, responsive clamping                |
 | Relations   | `src/relations/`, `ExternalSnapshotService.ts`                              | Bounded local graph, URL validation, consent-gated safe metadata cache                                |
 | Storage     | `src/storage/`                                                              | Event/layout YAML, daily view state, legacy migration, guarded writes                                 |
-| Portability | `src/import-export/`, `src/services/ExportService.ts`                       | Day/range formats, preview fingerprints, portable folders, conflict and partial-write guards          |
+| Portability | `src/import-export/`, `ExportService.ts`, `PortableArchiveService.ts`       | Day/range formats, direct local attachments, shared Portable archives, fingerprints, rollback guards  |
 
 ## Hybrid load flow
 
@@ -64,8 +64,9 @@ schema.
 
 Comfortable and Compact modes both impose a hard measured Markdown height. Short notes render in
 full; long text, images, tables, code, callouts, and embeds are clipped without changing source.
-Clipped cards display an explicit full-note hint and open the event note on double-click/Enter.
-Layout measures the visible border box, so hidden content cannot inflate Elastic geometry.
+Only a measured overflow receives a theme-derived bottom fade; no hint strip or repeated text is
+mounted. Cards open the event note on double-click/Enter. ResizeObserver and image-load measurements
+are coalesced through animation frames, and hidden content cannot inflate Elastic geometry.
 
 ## Timeline and resize behavior
 
@@ -108,10 +109,12 @@ cards may intentionally overlap, while automatic cards deterministically avoid m
 SVG paths use same-minute ports and a corridor near the axis; they are below cards and never own
 pointer events. Narrow clamps are applied to the resolved rectangle only.
 
-Each date/mode remembers zoom and normalized center. Button zoom anchors the viewport center and
-Command/Ctrl+wheel anchors the pointer. Fit and Now are explicit actions. The minimap maps nodes,
-event/reference rectangles and the visible frame, supports click/drag navigation, and temporarily
-collapses below 720 px without overwriting the wide preference.
+Each date/mode remembers zoom, independent 40–400% vertical scale, and normalized center. Button
+zoom anchors the viewport center and Command/Ctrl+wheel anchors the pointer. Vertical controls or
+Alt/Option+wheel change temporal spacing without changing canvas zoom or real event time. Fit and
+Now are explicit actions. The minimap maps nodes, event/reference rectangles and the visible frame,
+supports click/drag navigation, and temporarily collapses below 720 px without overwriting the wide
+preference.
 
 ## Relationship and snapshot flow
 
@@ -136,8 +139,14 @@ complete cache never reconnects unless the user selects refresh.
 - Day/range export reloads every source at commit and compares the preview fingerprint before
   creating a file. Range exports are capped at 366 inclusive days.
 - Portable output stages canonical event/index contents and writes its human root index last.
+- Portable output follows directly referenced non-Markdown Vault files one layer deep, validates
+  byte limits/MIME/magic/SHA-256, and rewrites only the exported event copy. It emits the shared
+  `timepoint-portable` manifest used by TimePoint Web.
 - Portable output includes referenced completed snapshots, writing preview assets before snapshot
   markers; a missing associated marker blocks the whole export.
+- Portable ZIP import preflights the central and local headers before expansion, validates every
+  manifest record, never overwrites a Vault path, rechecks a preview fingerprint, and rolls back all
+  newly created files after a caught failure.
 - Exact note snapshots guard update/delete, while unrelated YAML properties are preserved.
 - Duplicate IDs and unknown/future schemas fail closed.
 - Export aborts on any error diagnostic rather than emitting incomplete data.

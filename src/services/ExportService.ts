@@ -22,6 +22,12 @@ import {
   sha256Hex,
   validatePublicHttpsUrl,
 } from "./ExternalSnapshotService";
+import {
+  preparePortableContent,
+  type PortableAttachmentArtifact,
+  type PortableLinkResolver,
+  type PortableManifest,
+} from "./PortableArchiveService";
 
 export type ExportScope =
   { kind: "day"; date: string } | { kind: "range"; startDate: string; endDate: string };
@@ -62,6 +68,8 @@ interface LoadedRange {
   days: ParsedDayFile[];
   entries: TimePointEntry[];
   snapshotArtifacts: SnapshotArtifact[];
+  portableEntries: Map<string, TimePointEntry>;
+  localAttachments: PortableAttachmentArtifact[];
   preview: ExportPreview;
 }
 
@@ -86,6 +94,7 @@ export class ExportService {
     private readonly repository: DayFileRepository,
     private readonly getExportFolder: () => string,
     private readonly trashFile: (file: TFile) => Promise<void>,
+    private readonly resolveLink?: PortableLinkResolver,
   ) {}
 
   async preview(request: ExportRequest): Promise<ExportPreview> {
@@ -170,6 +179,14 @@ export class ExportService {
       request.format === "portable"
         ? await this.readSnapshotArtifacts(snapshotIds)
         : { artifacts: [] as SnapshotArtifact[], errors: [] as string[] };
+    const portableLoad =
+      request.format === "portable"
+        ? await preparePortableContent(this.vault, this.repository, entries, this.resolveLink)
+        : {
+            entries: new Map<string, TimePointEntry>(),
+            attachments: [] as PortableAttachmentArtifact[],
+            errors: [] as string[],
+          };
     const diagnostics = days.flatMap((day, index) =>
       day.diagnostics.map((diagnostic) => ({ date: dates[index] ?? "", diagnostic })),
     );
@@ -191,6 +208,7 @@ export class ExportService {
       ...errors.map(({ date, diagnostic }) => formatDiagnostic(date, diagnostic)),
       ...duplicateErrors,
       ...snapshotLoad.errors,
+      ...portableLoad.errors,
     ];
     const sourceFingerprint = fingerprint({
       request,
@@ -209,6 +227,7 @@ export class ExportService {
         markdown: artifact.markdown,
         preview: artifact.preview ? binaryFingerprint(artifact.preview) : null,
       })),
+      localAttachments: portableLoad.attachments.map((artifact) => artifact.record),
     });
     const preview: ExportPreview = {
       request,
@@ -223,7 +242,15 @@ export class ExportService {
       sourceFingerprint,
       canExport: errorMessages.length === 0,
     };
-    return { dates, days, entries, snapshotArtifacts: snapshotLoad.artifacts, preview };
+    return {
+      dates,
+      days,
+      entries,
+      snapshotArtifacts: snapshotLoad.artifacts,
+      portableEntries: portableLoad.entries,
+      localAttachments: portableLoad.attachments,
+      preview,
+    };
   }
 
   private async prepareOutput(
@@ -275,9 +302,10 @@ export class ExportService {
       if (!year || !month) throw new Error(`Invalid loaded date ${date}.`);
       const dayFolder = normalizePath(`${root}/TimePoint/Days/${year}/${month}/${date}`);
       for (const entry of day.entries) {
+        const portableEntry = loaded.portableEntries.get(entry.id) ?? entry;
         files.push({
-          path: normalizePath(`${dayFolder}/${entryFileName(entry)}`),
-          content: serializeStandaloneEntry(entry),
+          path: normalizePath(`${dayFolder}/${entryFileName(portableEntry)}`),
+          content: serializeStandaloneEntry(portableEntry),
         });
       }
       const indexPath = normalizePath(`${dayFolder}/${DAY_INDEX_BASENAME}.md`);
@@ -295,6 +323,13 @@ export class ExportService {
         `- [${date}](TimePoint/Days/${year}/${month}/${date}/${DAY_INDEX_BASENAME}.md)`,
       );
     }
+    const writtenAttachmentPaths = new Set<string>();
+    for (const attachment of loaded.localAttachments) {
+      const path = normalizePath(`${root}/${attachment.record.archivePath}`);
+      if (writtenAttachmentPaths.has(path)) continue;
+      files.push({ path, content: attachment.bytes });
+      writtenAttachmentPaths.add(path);
+    }
     for (const snapshot of loaded.snapshotArtifacts) {
       const folder = normalizePath(`${root}/TimePoint/Snapshots/${snapshot.id}`);
       if (snapshot.preview) {
@@ -302,6 +337,22 @@ export class ExportService {
       }
       files.push({ path: `${folder}/snapshot.md`, content: snapshot.markdown });
     }
+    const manifest: PortableManifest = {
+      schema: "timepoint-portable",
+      schemaVersion: 1,
+      exportedAt: new Date().toISOString(),
+      generator: "obsidian-timepoint",
+      generatorVersion: "0.8.0-beta.1",
+      entrySchemaVersion: 1,
+      entryCount: loaded.entries.length,
+      attachmentCount: loaded.localAttachments.length,
+      dates: loaded.dates,
+      attachments: loaded.localAttachments.map((artifact) => artifact.record),
+    };
+    files.push({
+      path: normalizePath(`${root}/manifest.json`),
+      content: `${JSON.stringify(manifest, null, 2)}\n`,
+    });
     const primaryPath = normalizePath(`${root}/_TimePoint_Export.md`);
     const rangeLabel = exportScopeLabel(request.scope);
     files.push({

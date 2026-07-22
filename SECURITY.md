@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-`0.7.0-beta.1` is the currently supported desktop beta. Older local handoff builds are not public
+`0.8.0-beta.1` is the currently supported desktop beta. Older local handoff builds are not public
 security-support targets.
 
 ## Reporting a vulnerability
@@ -25,8 +25,9 @@ private branch, verified against data-safety tests, and released with an appropr
 
 ## Security posture
 
-TimePoint is local-first and has no account, telemetry, analytics, backend, or runtime package
-dependencies. Event storage uses Obsidian's Vault APIs. External-link snapshot requests are an
+TimePoint is local-first and has no account, telemetry, analytics, backend, or required network
+service. Event storage uses Obsidian's Vault APIs. Its bundled ZIP parser handles local Portable
+interchange only. External-link snapshot requests are an
 optional, consent-gated exception: TimePoint uses Obsidian `requestUrl` for public HTTPS URLs and
 never attaches login cookies or event bodies. Disabling consent leaves local relations available
 and external links as inert placeholders.
@@ -41,6 +42,9 @@ an incomplete cache is never treated as successful.
 User-authored links, remote images rendered by Obsidian, third-party themes, sync plugins, and
 Obsidian itself remain outside TimePoint's trust boundary.
 
-Imports and exports fail closed on invalid schemas, duplicate IDs, parser errors, and stale
-previews. This reduces accidental corruption but does not replace normal Vault backups or an
-independent review before installing third-party code.
+Imports and exports fail closed on invalid schemas, duplicate IDs, parser errors, stale previews,
+unsafe archive paths, encrypted/ZIP64/multivolume archives, header mismatches, oversized files,
+excessive expansion ratios, and MIME/magic-byte mismatches. Imported files never replace existing
+Vault paths, and a caught partial write is rolled back. These controls reduce accidental corruption
+but do not replace normal Vault backups or an independent review before installing third-party
+code.

@@ -241,7 +241,12 @@ describe("combined storage and state stress", () => {
     expect(JSON.stringify(input)).toBe(before);
     expect(safe?.stackOrder).toHaveLength(500);
     expect(Object.keys(safe?.referenceCards ?? {})).toHaveLength(50);
-    expect(safe?.modes.elastic).toEqual({ zoom: 3, centerX: 0, centerY: 1 });
+    expect(safe?.modes.elastic).toEqual({
+      zoom: 3,
+      centerX: 0,
+      centerY: 1,
+      verticalScale: 1,
+    });
     for (const card of Object.values(safe?.referenceCards ?? {})) {
       expect(card.x).toBeGreaterThanOrEqual(0);
       expect(card.x).toBeLessThanOrEqual(1);

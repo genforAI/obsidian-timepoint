@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.8.0-beta.1 - 2026-07-22
+
+Cross-compatible local attachments, independent vertical scale, and quieter measured previews.
+
+- Added a per-date, per-layout-mode 40–400% vertical scale. Toolbar controls and Alt/Option+wheel
+  adjust temporal spacing independently from 50–300% canvas zoom and never alter event time.
+- Extended the validated daily view state with an optional `verticalScale`; older indexes default
+  safely to 100%, while malformed or future display state remains non-destructive.
+- Replaced the repeated clipped-preview message with a theme-derived bottom fade that appears only
+  after measured overflow. Image-load and resize measurements are frame-coalesced.
+- Added a shared `timepoint-portable` Schema 1 manifest and Portable ZIP import compatible with
+  TimePoint Web while retaining legacy day/range Markdown, JSON, CSV, and folder compatibility.
+- Portable export now carries directly referenced, non-Markdown local attachments one layer deep,
+  validates size, MIME, magic bytes and SHA-256, and rewrites only exported Markdown copies.
+- Added archive preflight protections for traversal, encryption, ZIP64/multivolume input, duplicate
+  or case-colliding paths, header mismatches, excessive expansion, and compression bombs.
+- Made Portable import preview-first and conflict-closed, with stale-preview detection, complete
+  rollback of newly created files after a caught failure, and no overwrite strategy.
+- Added a shared Web/Obsidian fixed fixture plus vertical-scale, attachment, compatibility, archive,
+  clipping, and rollback regression coverage.
+- Fixed direct zoom and vertical-scale actions skipping their `_Timeline.md` write when the settled
+  geometry left the stored viewport centre numerically unchanged. User-driven scale changes now
+  force one coalesced persistence write, and anchored-scroll frames abort when the date or layout
+  mode changes between animation frames so the write can never target the wrong day.
+
 ## 0.7.0-beta.1 - 2026-07-21
 
 Bounded relationship cards, consent-gated external metadata snapshots, and portable graph state.

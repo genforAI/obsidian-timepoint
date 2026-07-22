@@ -30,6 +30,8 @@ export interface TimelineViewportState {
   centerX: number;
   /** Normalized vertical viewport centre. */
   centerY: number;
+  /** Optional in legacy state; 1 is the normal 24-hour vertical scale. */
+  verticalScale?: number;
 }
 
 export interface TimePointReferenceCardState {

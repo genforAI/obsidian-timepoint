@@ -235,6 +235,13 @@ export class TimelineRenderer extends Component {
     return this.reflowExistingGeometry(scale);
   }
 
+  /** Reflow only geometry after the independent vertical day scale changes. */
+  async updateVerticalScale(): Promise<boolean> {
+    const scale = this.scaleRuntime?.interaction.timelineScale;
+    if (scale === undefined) return false;
+    return this.reflowExistingGeometry(scale);
+  }
+
   /** Reconcile persisted card geometry without replacing mounted Markdown. */
   async refreshLayoutGeometry(): Promise<boolean> {
     const scale = this.scaleRuntime?.interaction.timelineScale;
@@ -877,6 +884,10 @@ export class TimelineRenderer extends Component {
     cardStates?: ReadonlyMap<string, CardRuntimeState>,
     reuseMeasurements = false,
   ): TimelineLayoutResult {
+    const verticalScale = Math.min(
+      4,
+      Math.max(0.4, this.snapshot?.callbacks.dayViewState?.modes[mode].verticalScale ?? 1),
+    );
     return calculateTimelineLayout(
       mode,
       entries.map((entry) => {
@@ -897,10 +908,13 @@ export class TimelineRenderer extends Component {
       {
         minimumHeight:
           (mode === "elastic" ? settings.timelineBaseHeight : settings.realtimeHeight) *
-          timelineScale,
+          timelineScale *
+          verticalScale,
         topPadding: 36,
         bottomPadding: 44,
-        cardGap: Math.min(settings.minimumCardGap, density.layoutCardGap),
+        cardGap:
+          Math.min(settings.minimumCardGap, density.layoutCardGap) *
+          Math.min(2.25, Math.max(0.55, verticalScale)),
         defaultEstimatedCardHeight: 96,
         maximumColumns: mode === "realtime" ? density.maximumRealtimeColumns : undefined,
       },
@@ -1871,12 +1885,10 @@ export class TimelineRenderer extends Component {
     this.applyCardDisplay(state.card, state.markdown, state.overflowHint, state.display);
   }
 
-  private createOverflowHint(card: HTMLElement, editable: boolean): HTMLElement {
-    const hint = card.createDiv({ cls: "timepoint-card-overflow" });
-    setIcon(hint.createSpan({ cls: "timepoint-card-overflow-icon" }), "maximize-2");
-    hint.createSpan({
-      text: editable ? t("view.previewEnds") : t("view.previewEnds").split("·")[0]?.trim(),
-    });
+  private createOverflowHint(_card: HTMLElement, _editable: boolean): HTMLElement {
+    // Clipping is communicated only by the theme-aware gradient. Repeating a
+    // label on every dense card makes the canvas noisier than the content.
+    const hint = createSpan();
     hint.hidden = true;
     return hint;
   }

@@ -5,7 +5,7 @@ notes into a responsive 00:00–24:00 record of what happened without requiring 
 or telemetry. Optional external-link snapshots make bounded public HTTPS requests only after the
 user enables them.
 
-> `0.7.0-beta.1` is a desktop beta. Keep a normal vault backup and report reproducible problems
+> `0.8.0-beta.1` is a desktop beta. Keep a normal vault backup and report reproducible problems
 > with private note text removed.
 
 ## How this project was built
@@ -14,7 +14,7 @@ J. Hall defines the product direction and performs hands-on testing and acceptan
 OpenAI Codex produced the implementation, UI, performance optimization, automated test suite,
 packaging, and release automation under that human direction and review.
 
-The current public candidate passes 207/207 full-suite tests and 90/90 focused stress tests. The
+The current public candidate passes 215/215 full-suite tests and 91/91 focused stress tests. The
 same source also passes formatting, ESLint, strict TypeScript, production build, bundle smoke, and
 high-severity dependency audit gates on Node.js 20 and 22. See [Validation](docs/VALIDATION.md) and
 [Stress tests](docs/STRESS_TESTS.md) for the exact scope and remaining physical runtime gates.
@@ -26,7 +26,7 @@ high-severity dependency audit gates on Node.js 20 and 22. See [Validation](docs
 - Keeps long text, images, tables, code, callouts, and embeds clipped inside timeline cards.
 - Reflows dense periods in Elastic mode or preserves proportional time in Real-time mode.
 - Provides an explicit Hand tool, Space-to-pan, two-dimensional panning, 50–300% anchored zoom,
-  fit-to-window, jump-to-now, and a responsive minimap.
+  independent 40–400% vertical scale, fit-to-window, jump-to-now, and a responsive minimap.
 - Lets the main timeline move and resize cards without changing their real event time, content,
   tags, or business timestamp; layout changes support cancel, undo, redo, and reset.
 - Optionally builds a bounded daily relationship view for TimePoint links, local notes, and
@@ -37,7 +37,7 @@ high-severity dependency audit gates on Node.js 20 and 22. See [Validation](docs
 - Displays English or Simplified Chinese from the Obsidian locale, with English fallback.
 - Embeds an editable or read-only timeline in an ordinary note's Reading View.
 - Previews and safely exports one day or an inclusive date range in Markdown, JSON, CSV, or a
-  portable notes folder.
+  cross-compatible Portable package with directly referenced local attachments.
 
 ## Install the beta with BRAT
 
@@ -84,8 +84,9 @@ export**.
 - Delete moves the event note to Obsidian's trash. **Undo last entry delete** restores the latest
   deletion during the current plugin session.
 
-Cards never expand into full documents inside the timeline. A visible fade and “preview ends
-here” label mark clipped content, including the lower portion of oversized images.
+Cards never expand into full documents inside the timeline. Only genuinely clipped content receives
+a quiet, theme-derived bottom fade; there is no repeated hint strip or label. The complete note,
+including the hidden lower portion of an oversized image, remains available in the native editor.
 
 Drag ordinary blank space to pan, hold Space for temporary Hand behavior, or enable the Hand button
 to pan from any non-control surface without opening, creating, or moving cards. Drag a card body to
@@ -95,8 +96,10 @@ to cancel an active gesture, and use Command/Ctrl+Z or Command/Ctrl+Shift+Z whil
 focused to undo or redo layout changes.
 
 Zoom Out, the percentage button, Zoom In, Fit, and Now affect the saved viewport for that date and
-layout mode, not event content. Command/Ctrl+wheel zooms around the pointer. On wide leaves the
-minimap is visible; below about 720 px it opens from a floating button.
+layout mode, not event content. Command/Ctrl+wheel zooms around the pointer. The separate vertical
+scale controls—or Alt/Option+wheel—compress or expand temporal spacing from 40% to 400% without
+changing canvas zoom or event time. Both values are remembered per date and layout mode. On wide
+leaves the minimap is visible; below about 720 px it opens from a floating button.
 
 ## Relationship view
 
@@ -149,7 +152,10 @@ TimePoint/Exports/YYYY-MM-DD_to_YYYY-MM-DD/
 Markdown and JSON date-range exports use `timepoint-range-schema: 1` and can be imported again.
 CSV includes one row per event with its date and optional card fields. Portable export recreates
 standard `TimePoint/Days/...` event notes, day indexes with viewport/relationship state, used
-completed snapshots, and a root `_TimePoint_Export.md` guide.
+completed snapshots, and a root `_TimePoint_Export.md` guide. It also packages the first layer of
+directly referenced, non-Markdown local attachments, rewrites paths only in exported event copies,
+and leaves every Vault source note untouched. The Import panel accepts the shared
+`timepoint-portable` ZIP emitted by TimePoint Web or the Obsidian plugin.
 
 An error-level parser diagnostic, future schema, or duplicate ID blocks the whole export. If data
 changes after preview, TimePoint requires another preview and writes nothing. See
@@ -178,8 +184,9 @@ notes; the original file remains as an archive. See [Data format](docs/DATA_FORM
 
 ## Privacy and security
 
-TimePoint has no runtime dependencies, account system, telemetry, analytics, or required network
-requests. Event content remains in the Vault. Optional external-link snapshots use a disclosed,
+TimePoint has no account system, telemetry, analytics, or required network requests. Event content
+remains in the Vault. The production bundle includes a small ZIP parser used only for Portable
+interchange. Optional external-link snapshots use a disclosed,
 consent-gated and bounded public HTTPS request path; they never send event bodies. User-authored
 remote images or links retain normal Obsidian behavior. Review [Privacy](docs/PRIVACY.md) and
 [Security](SECURITY.md) before enabling snapshots or sharing a diagnostic.

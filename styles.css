@@ -1004,10 +1004,6 @@
   display: none;
 }
 
-.timepoint-timeline.is-density-dense .timepoint-card-overflow {
-  display: none;
-}
-
 .timepoint-timeline.is-density-dense .timepoint-card.is-clipped .timepoint-markdown::after {
   height: 16px;
 }
@@ -1135,34 +1131,6 @@
   background: linear-gradient(transparent, var(--tp-current-card-background));
   content: "";
   pointer-events: none;
-}
-
-.timepoint-card-overflow {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 9px -2px -2px;
-  padding-top: 8px;
-  border-top: 1px solid var(--background-modifier-border);
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
-  line-height: 1.3;
-  user-select: none;
-}
-
-.timepoint-card-overflow[hidden] {
-  display: none;
-}
-
-.timepoint-card-overflow-icon {
-  display: inline-flex;
-  flex: none;
-  color: var(--text-muted);
-}
-
-.timepoint-card-overflow-icon svg {
-  width: 14px;
-  height: 14px;
 }
 
 .timepoint-markdown > :first-child {

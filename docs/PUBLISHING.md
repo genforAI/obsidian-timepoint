@@ -7,8 +7,8 @@ repository is `genforAI/obsidian-timepoint`.
 
 1. Authenticate `genforAI` with `gh auth login` and verify it with `gh api user --jq .login`.
 2. Run `npm install --package-lock-only` and `npm run check`.
-3. Run `npm run release:validate -- 0.7.0-beta.1`.
-4. Run `npm run release:stage` and inspect `Release/0.7.0-beta.1/UPLOAD_CHECKLIST.md`.
+3. Run `npm run release:validate -- 0.8.0-beta.1`.
+4. Run `npm run release:stage` and inspect `Release/0.8.0-beta.1/UPLOAD_CHECKLIST.md`.
 5. Create the public `obsidian-timepoint` repository, add it as `origin`, and push `main` only after
    explicit authorization.
 
@@ -17,7 +17,7 @@ local `Release/` directory, and compiled `main.js` are ignored and must not be f
 
 ## Beta release
 
-The exact candidate tag is `0.7.0-beta.1`, without a `v` prefix. The tag workflow re-runs all gates,
+The exact candidate tag is `0.8.0-beta.1`, without a `v` prefix. The tag workflow re-runs all gates,
 checks tag/manifest/package/lock/versions consistency, builds a minified bundle, and publishes only:
 
 - `manifest.json`
@@ -55,7 +55,7 @@ Obsidian Vault. Network targets and screenshots must contain no private content.
 
 ## Stable release
 
-Before changing metadata to `0.7.0`, complete macOS and Windows checks, two third-party themes,
+Before changing metadata to `0.8.0`, complete macOS and Windows checks, two third-party themes,
 complete four-format export/import round trips, and verify there are no P0/P1 data defects. Keep
 `isDesktopOnly: true` until physical iOS and Android validation is complete.
 

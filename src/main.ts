@@ -18,6 +18,10 @@ import { RelationService } from "./relations";
 import { ExternalSnapshotService, sha256Hex } from "./services/ExternalSnapshotService";
 import { ExportService, type ExportFormat } from "./services/ExportService";
 import {
+  PortableArchiveService,
+  type PortableArchivePreview,
+} from "./services/PortableArchiveService";
+import {
   DEFAULT_SETTINGS,
   TimePointSettingTab,
   sanitizeSettings,
@@ -48,6 +52,7 @@ export default class TimePointPlugin extends Plugin {
   override settings: TimePointSettings = { ...DEFAULT_SETTINGS };
   repository!: DayFileRepository;
   private exportService!: ExportService;
+  private portableArchiveService!: PortableArchiveService;
   private relationService!: RelationService;
   private snapshotService!: ExternalSnapshotService;
   private lastOpenedDate = "";
@@ -77,6 +82,13 @@ export default class TimePointPlugin extends Plugin {
       this.app.vault,
       this.repository,
       () => this.settings.exportFolder,
+      (file) => this.app.fileManager.trashFile(file),
+      (target, sourcePath) => this.app.metadataCache.getFirstLinkpathDest(target, sourcePath),
+    );
+    this.portableArchiveService = new PortableArchiveService(
+      this.app.vault,
+      this.repository,
+      () => this.settings.storageFolder,
       (file) => this.app.fileManager.trashFile(file),
     );
     this.relationService = new RelationService(this.app, this.repository);
@@ -308,7 +320,30 @@ export default class TimePointPlugin extends Plugin {
       preview: async (parsed, strategy) => this.planImportedEntries(parsed, strategy, false),
       commit: async (parsed, strategy, expectedPlanFingerprint) =>
         this.planImportedEntries(parsed, strategy, true, expectedPlanFingerprint),
+      previewPortable: async (file) =>
+        this.portablePreviewSummary(await this.portableArchiveService.preview(file)),
+      commitPortable: async (file, expectedPlanFingerprint) => {
+        const result = await this.portableArchiveService.import(file, expectedPlanFingerprint);
+        this.refreshViews();
+        return this.portablePreviewSummary(result);
+      },
     }).open();
+  }
+
+  private portablePreviewSummary(preview: PortableArchivePreview): ImportPreviewSummary {
+    return {
+      entryCount: preview.entryCount,
+      attachmentCount: preview.attachmentCount,
+      conflictCount: preview.conflicts.length,
+      insertCount: preview.canImport ? preview.entryCount : 0,
+      replaceCount: 0,
+      skipCount: 0,
+      rejectCount: preview.canImport
+        ? 0
+        : Math.max(1, preview.errors.length + preview.conflicts.length),
+      dates: preview.dates,
+      planFingerprint: preview.planFingerprint,
+    };
   }
 
   openSettings(): void {

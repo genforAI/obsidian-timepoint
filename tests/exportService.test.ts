@@ -170,6 +170,55 @@ describe("ExportService", () => {
     );
   });
 
+  it("copies one-layer local attachments and rewrites only the exported event copy", async () => {
+    const vault = new MemoryVault();
+    const date = "2028-02-29";
+    const original = entry(date, "tp-with-attachment", {
+      contentMarkdown:
+        "Before\n\n![Local image](photo.png)\n\n`![Inline example](ignored.png)`\n\n```md\n![Fenced example](ignored.png)\n```\n\nAfter",
+    });
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+    vault.seedBinary("TimePoint/Days/2028/02/2028-02-29/photo.png", bytes.buffer);
+    vault.seedBinary("TimePoint/Days/2028/02/2028-02-29/ignored.png", bytes.buffer);
+    const repository = {
+      loadDay: vi.fn(async () => loadedDay(date, [original])),
+    };
+    const service = createService(vault, repository);
+    const request = {
+      scope: { kind: "day" as const, date },
+      format: "portable" as const,
+    };
+    const preview = await service.preview(request);
+    expect(preview).toMatchObject({ canExport: true, errorCount: 0 });
+    const result = await service.export(request, preview.sourceFingerprint);
+    const eventPath = result.files.find(
+      (path) =>
+        path.includes("tp-with-attachment") &&
+        path.endsWith(".md") &&
+        !path.endsWith("/_Timeline.md"),
+    );
+    expect(eventPath).toBeDefined();
+    expect(vault.content(eventPath ?? "")).toMatch(
+      /!\[Local image\]\(attachments\/[a-f0-9]{16}-photo\.png\)/u,
+    );
+    expect(original.contentMarkdown).toContain("(photo.png)");
+
+    const root = "TimePoint/Exports/2028-02-29/portable";
+    const manifest = JSON.parse(vault.content(`${root}/manifest.json`) ?? "{}") as {
+      schema?: string;
+      attachmentCount?: number;
+      attachments?: { archivePath: string; sha256: string }[];
+    };
+    expect(manifest).toMatchObject({
+      schema: "timepoint-portable",
+      attachmentCount: 1,
+    });
+    expect(vault.content(eventPath ?? "")).toContain("![Fenced example](ignored.png)");
+    const record = manifest.attachments?.[0];
+    expect(record?.sha256).toMatch(/^[a-f0-9]{64}$/u);
+    expect(vault.binary(`${root}/${record?.archivePath ?? ""}`)).toEqual(bytes);
+  });
+
   it("carries day canvas state and completed snapshot artifacts in portable output", async () => {
     const snapshotUrl = "https://example.org/portable";
     const snapshotId = await sha256Hex(snapshotUrl);
@@ -403,7 +452,7 @@ describe("ExportService", () => {
       portableRequest,
       portablePreview.sourceFingerprint,
     );
-    expect(portable.files).toHaveLength(expectedCount + dates.length + 1);
+    expect(portable.files).toHaveLength(expectedCount + dates.length + 2);
     expect(portable.files.at(-1)).toBe(portable.primaryPath);
     expect(portableVault.content(portable.primaryPath)).toContain(`eventCount: ${expectedCount}`);
     const eventFiles = portable.files.filter(
@@ -476,6 +525,7 @@ class MemoryVault {
     const file = new (TFile as unknown as new () => TFile & { path: string; content: string })();
     file.path = path;
     file.content = content;
+    setFileMetadata(file, path, new TextEncoder().encode(content).byteLength);
     this.entries.set(path, file);
     return file;
   }
@@ -488,6 +538,7 @@ class MemoryVault {
     )();
     file.path = path;
     file.binary = content.slice(0);
+    setFileMetadata(file, path, content.byteLength);
     this.entries.set(path, file);
     return file;
   }
@@ -504,6 +555,7 @@ class MemoryVault {
     const file = new (TFile as unknown as new () => TFile & { path: string; content: string })();
     file.path = path;
     file.content = content;
+    setFileMetadata(file, path, new TextEncoder().encode(content).byteLength);
     this.entries.set(path, file);
   }
 
@@ -513,6 +565,7 @@ class MemoryVault {
     )();
     file.path = path;
     file.binary = content.slice(0);
+    setFileMetadata(file, path, content.byteLength);
     this.entries.set(path, file);
   }
 
@@ -538,4 +591,14 @@ class MemoryVault {
       ? new Uint8Array((value as TFile & { binary?: ArrayBuffer }).binary ?? new ArrayBuffer(0))
       : undefined;
   }
+}
+
+function setFileMetadata(file: TFile, path: string, size: number): void {
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  Object.assign(file, {
+    name,
+    extension: name.includes(".") ? (name.split(".").at(-1) ?? "") : "",
+    basename: name.includes(".") ? name.slice(0, name.lastIndexOf(".")) : name,
+    stat: { size, ctime: 0, mtime: 0 },
+  });
 }

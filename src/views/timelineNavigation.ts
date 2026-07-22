@@ -1,8 +1,12 @@
+import type { TimelineViewportState } from "../model/types";
+
 export type TimelineInteractionMode = "select" | "pan";
 
 export const MIN_TIMELINE_ZOOM = 0.5;
 export const MAX_TIMELINE_ZOOM = 3;
 export const TIMELINE_ZOOM_STEP = 0.25;
+export const MIN_TIMELINE_VERTICAL_SCALE = 0.4;
+export const MAX_TIMELINE_VERTICAL_SCALE = 4;
 
 /**
  * A stored centre belongs to a date/mode navigation context. Reapplying it for
@@ -15,6 +19,25 @@ export function shouldRestoreStoredViewport(
   nextContextKey: string,
 ): boolean {
   return previousContextKey !== nextContextKey;
+}
+
+/**
+ * Runtime geometry mutates the in-memory state before its anchored scroll
+ * frame settles. A direct zoom/density action must therefore force one write
+ * even when the final centre is numerically unchanged.
+ */
+export function shouldPersistTimelineViewport(
+  previous: TimelineViewportState,
+  next: TimelineViewportState,
+  force = false,
+): boolean {
+  return (
+    force ||
+    previous.zoom !== next.zoom ||
+    (previous.verticalScale ?? 1) !== (next.verticalScale ?? 1) ||
+    Math.abs(previous.centerX - next.centerX) >= 0.0001 ||
+    Math.abs(previous.centerY - next.centerY) >= 0.0001
+  );
 }
 
 export function normalizeTimelineZoom(value: number): number {
@@ -43,6 +66,32 @@ export function timelineZoomFromWheel(
 
 export function isTimelineZoomWheel(metaKey: boolean, ctrlKey: boolean): boolean {
   return metaKey || ctrlKey;
+}
+
+export function normalizeTimelineVerticalScale(value: number): number {
+  if (!Number.isFinite(value)) return 1;
+  return Math.min(MAX_TIMELINE_VERTICAL_SCALE, Math.max(MIN_TIMELINE_VERTICAL_SCALE, value));
+}
+
+export function timelineVerticalScaleFromWheel(
+  currentScale: number,
+  deltaY: number,
+  deltaMode: number,
+  pageExtent: number,
+): number {
+  if (!Number.isFinite(deltaY) || deltaY === 0) return normalizeTimelineVerticalScale(currentScale);
+  const unit = deltaMode === 1 ? 16 : deltaMode === 2 ? Math.max(1, pageExtent) : 1;
+  const pixelDelta = Math.min(240, Math.max(-240, deltaY * unit));
+  const factor = Math.exp(-pixelDelta * 0.002);
+  return Math.round(normalizeTimelineVerticalScale(currentScale * factor) * 1_000) / 1_000;
+}
+
+export function isTimelineVerticalScaleWheel(
+  altKey: boolean,
+  metaKey: boolean,
+  ctrlKey: boolean,
+): boolean {
+  return altKey && !metaKey && !ctrlKey;
 }
 
 /** Keep the same relative viewport centre after the runtime canvas changes size. */

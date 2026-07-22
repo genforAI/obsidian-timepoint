@@ -1,6 +1,6 @@
-# TimePoint 0.7.0-beta.1 validation status
+# TimePoint 0.8.0-beta.1 validation status
 
-Date: 2026-07-21
+Date: 2026-07-22
 
 ## Automated gate
 
@@ -14,11 +14,19 @@ The public beta gate requires all of the following on Node.js 20 and 22:
 - bundle, manifest, dependency, and secret smoke checks;
 - high-severity dependency audit.
 
-The candidate passed the complete local gate repeatedly on 2026-07-21, including after the final
-no-flicker rendering changes: 20 Vitest files and 207/207 tests passed; formatting, ESLint, strict
-TypeScript, minified production build, bundle smoke, and high-severity audit all passed; `npm audit`
-reported 0 vulnerabilities. The focused pressure suite passed 90/90, a shuffled final suite passed
-207/207, and Node 20 plus Node 22 each passed strict TypeScript and 207/207 tests.
+The candidate passed the complete local gate on 2026-07-22: 21 Vitest files and 216/216 tests;
+formatting, ESLint, strict TypeScript, minified production build, bundle smoke, and high-severity
+audit all passed; `npm audit` reported 0 vulnerabilities. The focused pressure suite passed 91/91,
+a shuffled final suite passed 216/216 with seed `20260722`, and Node 20 plus Node 22 each passed
+strict TypeScript and 216/216 tests.
+
+The first dedicated-Vault runtime session for 0.8 exposed a persistence defect the automated suite
+had not covered: a direct vertical-scale change updated the interface and relaid 250 cards, but the
+"viewport unchanged" optimization skipped the `_Timeline.md` write because the in-memory state had
+already mutated before comparison. The fix forces one coalesced write after direct zoom or density
+actions and aborts anchored-scroll frames whose date or layout mode changed mid-flight. The complete
+gate above, including the new forced-persistence regression test, was re-run after this fix; the
+release assets were rebuilt from the fixed source.
 
 Automated coverage includes appearance migration, bilingual dictionary parity, responsive/theme
 CSS contracts, legacy storage safety, native editor targeting, bounded previews, date-range and
@@ -43,6 +51,12 @@ expansion/cycles, consent, public-URL validation, cache/in-flight deduplication,
 timeouts/offline retry, HTML/image limits, MIME/magic validation, marker-last commits, and portable
 relationship/snapshot round trips.
 
+0.8 coverage additionally includes backward-compatible vertical-scale state, independent
+Alt/Option-wheel density changes, no-label measured overflow fades, one-layer attachment discovery
+outside code/comments, exported-copy-only path rewriting, shared Web/Obsidian Portable fixtures,
+ZIP central/local-header preflight, traversal/collision/encryption/ZIP64/bomb rejection, attachment
+hash/MIME/magic validation, stale preview detection, no-overwrite imports, and rollback.
+
 ## Runtime gate
 
 No static or browser simulation is accepted as Obsidian runtime evidence. A dedicated Obsidian
@@ -62,11 +76,11 @@ Routine file checks and automation must not activate or cover the user's foregro
 Visible UI control requires advance explanation and user consent; user-performed visible actions are
 preferred.
 
-### 2026-07-21 compatibility run
+### Historical 2026-07-21 compatibility run
 
 A disposable `TimePoint_GateH_Test_Vault` was exercised on macOS in Obsidian 1.12.7 using the exact
-candidate runtime files. This is useful compatibility evidence, but it is not the formal beta gate
-because the candidate manifest requires Obsidian 1.13.0.
+0.7 candidate runtime files. This is historical compatibility evidence only: those hashes do not
+validate 0.8, and the current manifest requires Obsidian 1.13.0.
 
 The final installed candidate matched these source-build SHA-256 values byte for byte:
 
@@ -92,17 +106,18 @@ Verified in that compatibility run:
 - single-day Markdown export preview (`250 events`, `0 conflicts`, `0 errors`) and a successful
   170 KiB export to `TimePoint/Exports/2026-07-20/timepoint-2026-07-20.md`.
 
-Still required for the formal gate: Obsidian 1.13+, physical pointer move/eight-way resize and
-cancel/undo evidence, third-party themes, breakpoint/200% matrix, snapshot networking fixtures,
-all day/range format round trips, Windows, and the stable-release checks listed below.
+Still required for the formal 0.8 runtime gate: install the exact 0.8 candidate in Obsidian 1.13+;
+verify physical vertical-scale/fade/Portable behaviors plus the existing pointer and relationship
+matrix. Windows, third-party themes, and full platform round trips remain stable-release gates.
 
 ## Release decisions
 
 - `0.6.0-beta.1` milestone: canvas automation green, default light/dark pass, and macOS core canvas
   interactions pass.
-- `0.7.0-beta.1`: complete automation green, default light/dark pass, macOS core canvas/local
-  relation interactions pass, and consent-gated snapshot smoke passes in the disposable Vault.
-- `0.7.0`: macOS and Windows pass, two third-party themes pass, complete export round trips pass,
+- `0.8.0-beta.1`: complete automation green, default light/dark pass, macOS core canvas/local
+  relation interactions pass, measured fade and vertical scale pass, and Web Portable import/export
+  passes in the disposable Vault.
+- `0.8.0`: macOS and Windows pass, two third-party themes pass, complete export round trips pass,
   and no P0/P1 data issue remains.
 - Mobile support stays unclaimed and `isDesktopOnly` remains true until physical iOS and Android
   validation is complete.

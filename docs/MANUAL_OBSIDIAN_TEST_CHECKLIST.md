@@ -1,4 +1,4 @@
-# TimePoint 0.7.0-beta.1 manual Obsidian checklist
+# TimePoint 0.8.0-beta.1 manual Obsidian checklist
 
 Use a disposable Vault and the exact three candidate runtime files. Record Obsidian, OS, theme,
 scaling, version/hash, and synthetic fixture revision. Never include personal notes in evidence.
@@ -14,7 +14,7 @@ scaling, version/hash, and synthetic fixture revision. Never include personal no
 ## Install and entry points
 
 - [ ] Release assets are exactly `manifest.json`, `main.js`, and `styles.css` for
-      `0.7.0-beta.1`; the tag has no `v` prefix.
+      `0.8.0-beta.1`; the tag has no `v` prefix.
 - [ ] Plugin enables without a console exception and shows one non-blocking ready notice only once.
 - [ ] Ribbon and **Open timeline** command open the view.
 - [ ] The Settings **Open timeline** button opens the view.
@@ -43,6 +43,8 @@ scaling, version/hash, and synthetic fixture revision. Never include personal no
 - [ ] Space temporarily enables Hand behavior; releasing it restores the selected tool.
 - [ ] 50–300% button zoom preserves the viewport centre; Command/Ctrl+wheel anchors the pointer;
       Fit and Now are correct and none changes event content or timestamps.
+- [ ] 40–400% vertical controls and Alt/Option+wheel change only temporal spacing. The value is
+      independent from canvas zoom and persists separately for each date and layout mode.
 - [ ] Wide minimap shows nodes, event/reference rectangles, and current viewport; click and frame
       drag navigate correctly. Below 720 px it opens from a floating overlay button without
       overwriting the saved wide-screen preference.
@@ -80,6 +82,8 @@ scaling, version/hash, and synthetic fixture revision. Never include personal no
 - [ ] Double-click, pencil, Enter, and node actions reuse the native editor pane.
 - [ ] Long text, images, tables, callouts, code, embeds, and long tokens clip inside bounded cards.
 - [ ] The lower image/text portion stays hidden until the complete note opens.
+- [ ] A quiet theme-derived fade appears only when the card truly overflows. There is no repeated
+      clipping hint, and delayed image loading adds/removes the fade without flashing peer cards.
 - [ ] Repeated split resize reflows cards without overlap or revealing clipped content.
 - [ ] Delete, undo, external edit/create/rename/delete, legacy repair, and migration remain safe.
 
@@ -120,9 +124,13 @@ scaling, version/hash, and synthetic fixture revision. Never include personal no
 - [ ] Day and range Markdown round-trip through Import.
 - [ ] Day and range JSON round-trip through Import.
 - [ ] CSV preserves multiple dates, multiline Markdown, quotes, commas, tags, and IDs.
-- [ ] Portable folder contains ordinary event files, day indexes, and root guide; copy it to a
-      second test Vault and open the indexes. Confirm layout/view/relationship state and used
-      completed snapshots survive.
+- [ ] Portable folder contains `manifest.json`, ordinary event files, day indexes, directly
+      referenced local attachments, and the root guide. Confirm attachment references are rewritten
+      only in exported copies and the source notes remain byte-identical.
+- [ ] ZIP the Portable tree and import it into a second test Vault. Confirm Web/Obsidian manifest
+      compatibility, layout/view/relationship state, attachments, and used snapshots survive.
+- [ ] Traversal, case-colliding paths, encrypted/ZIP64 archives, header mismatch, compression bombs,
+      invalid MIME/magic/SHA-256, duplicate IDs, and any existing target block the whole import.
 - [ ] Missing or changed associated snapshots and changed daily view state invalidate preview and
       block the whole portable write.
 - [ ] Success reports exact file count/path; Markdown/portable Open works; path copy works; content

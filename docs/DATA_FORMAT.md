@@ -6,7 +6,7 @@ Markdown inside the vault is the source of truth. Settings and the last-opened d
 plugin `data.json`; event bodies, timestamps, IDs, tags, and durable card layout do not. Automatic
 layout, responsive clamps, clipping, and measured Markdown height remain runtime-only.
 
-Version 0.7 stores a day as a folder without changing event Schema 1:
+Version 0.8 stores a day as a folder without changing event Schema 1:
 
 ```text
 TimePoint/Days/YYYY/MM/YYYY-MM-DD/
@@ -94,15 +94,17 @@ event notes, not in generated index sections. TimePoint preserves one managed di
 
 ```text
 <!-- timepoint:view-state
-{"schemaVersion":1,"modes":{"elastic":{"zoom":1,"centerX":0.5,"centerY":0},"realtime":{"zoom":1,"centerX":0.5,"centerY":0}},"minimapExpanded":true,"relationsEnabled":false,"stackOrder":[],"referenceCards":{}}
+{"schemaVersion":1,"modes":{"elastic":{"zoom":1,"centerX":0.5,"centerY":0,"verticalScale":1},"realtime":{"zoom":1,"centerX":0.5,"centerY":0,"verticalScale":1}},"minimapExpanded":true,"relationsEnabled":false,"stackOrder":[],"referenceCards":{}}
 -->
 ```
 
-The validated block remembers separate Elastic/Real-time zoom and normalized viewport centers,
+The validated block remembers separate Elastic/Real-time zoom, 40–400% vertical scale, and
+normalized viewport centers,
 the wide-screen minimap preference, the daily relationship toggle, event/reference stacking, and
 reference-card layout/expansion. Zoom is clamped to `0.5…3`; reference cards are capped at 50 and
-stack entries at 500. A future view-state schema is preserved but ignored and never blocks event
-reading. Duplicate/malformed managed blocks block display-state writes rather than guessing.
+stack entries at 500. `verticalScale` is optional for backward compatibility and defaults to `1`.
+A future view-state schema is preserved but ignored and never blocks event reading.
+Duplicate/malformed managed blocks block display-state writes rather than guessing.
 
 ## External snapshot cache
 
@@ -167,7 +169,11 @@ External or sync changes therefore cause a conflict message rather than a silent
   carries a date per row, and portable export recreates the canonical folder tree.
 - Markdown and JSON preserve card layout/snapshot metadata. CSV exposes optional card fields but is
   not a complete canvas-state format. Portable export preserves event extensions, daily view
-  state, relationship layout, and used completed snapshots.
+  state, relationship layout, used completed snapshots, and directly referenced non-Markdown local
+  files one layer deep. Only exported event copies receive portable attachment paths.
+- Portable output includes a shared `timepoint-portable` Schema 1 manifest. The Import panel accepts
+  a matching Web or Obsidian ZIP only after full archive, file-byte, hash, MIME, identity, date,
+  conflict, and stale-preview validation; existing Vault paths are never replaced.
 - Error-level diagnostics block export so a partial recovery is never presented as complete data.
 
 The import preview fingerprint must still match a fresh vault read at commit time. Repository

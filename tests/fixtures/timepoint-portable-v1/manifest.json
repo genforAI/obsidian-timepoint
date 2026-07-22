@@ -1,0 +1,25 @@
+{
+  "schema": "timepoint-portable",
+  "schemaVersion": 1,
+  "exportedAt": "2028-02-29T10:00:00.000Z",
+  "generator": "timepoint-web",
+  "generatorVersion": "0.2.0-beta.1",
+  "entrySchemaVersion": 1,
+  "entryCount": 1,
+  "attachmentCount": 1,
+  "dates": ["2028-02-29"],
+  "attachments": [
+    {
+      "id": "asset-cross-platform-fixture",
+      "eventId": "tp-cross-platform-fixture",
+      "path": "attachments/fixture.txt",
+      "archivePath": "TimePoint/Days/2028/02/2028-02-29/attachments/fixture.txt",
+      "fileName": "fixture.txt",
+      "mimeType": "text/plain",
+      "kind": "text",
+      "renderPolicy": "inline-text",
+      "size": 23,
+      "sha256": "f55c8ba6726e9379475826b224d7603eb546c43fcade7058532de635d8ed77f4"
+    }
+  ]
+}

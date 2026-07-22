@@ -22,12 +22,16 @@ import {
 } from "../src/views/timelineDensity";
 import {
   clampViewportOffset,
+  isTimelineVerticalScaleWheel,
   isTimelineZoomWheel,
+  normalizeTimelineVerticalScale,
   normalizeTimelineZoom,
   resolveZoomedScrollTop,
+  shouldPersistTimelineViewport,
   shouldRestoreStoredViewport,
   stepTimelineZoom,
   timelineZoomFromWheel,
+  timelineVerticalScaleFromWheel,
 } from "../src/views/timelineNavigation";
 import { LatestAsyncQueue } from "../src/views/latestAsyncQueue";
 
@@ -274,6 +278,27 @@ describe("timeline pan and zoom", () => {
     expect(timelineZoomFromWheel(1, -1, 2, 800)).toBeLessThanOrEqual(3);
     expect(timelineZoomFromWheel(3, -100, 0, 800)).toBe(3);
     expect(timelineZoomFromWheel(0.5, 100, 0, 800)).toBe(0.5);
+  });
+
+  it("keeps Alt/Option vertical scaling isolated from Command/Ctrl canvas zoom", () => {
+    expect(isTimelineVerticalScaleWheel(true, false, false)).toBe(true);
+    expect(isTimelineVerticalScaleWheel(true, true, false)).toBe(false);
+    expect(isTimelineVerticalScaleWheel(true, false, true)).toBe(false);
+    expect(normalizeTimelineVerticalScale(Number.NaN)).toBe(1);
+    expect(normalizeTimelineVerticalScale(0.1)).toBe(0.4);
+    expect(normalizeTimelineVerticalScale(8)).toBe(4);
+    expect(timelineVerticalScaleFromWheel(1, -50, 0, 800)).toBeGreaterThan(1);
+    expect(timelineVerticalScaleFromWheel(1, 3, 1, 800)).toBeLessThan(1);
+    expect(timelineVerticalScaleFromWheel(4, -100, 0, 800)).toBe(4);
+    expect(timelineVerticalScaleFromWheel(0.4, 100, 0, 800)).toBe(0.4);
+  });
+
+  it("forces a persistence write after in-memory zoom or density geometry settles", () => {
+    const viewport = { zoom: 2, centerX: 0.5, centerY: 0.25, verticalScale: 0.9 };
+    expect(shouldPersistTimelineViewport(viewport, { ...viewport })).toBe(false);
+    expect(shouldPersistTimelineViewport(viewport, { ...viewport }, true)).toBe(true);
+    expect(shouldPersistTimelineViewport(viewport, { ...viewport, verticalScale: 1 })).toBe(true);
+    expect(shouldPersistTimelineViewport(viewport, { ...viewport, zoom: 2.25 })).toBe(true);
   });
 
   it("keeps the relative viewport centre stable after zoom", () => {

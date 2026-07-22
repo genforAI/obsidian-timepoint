@@ -111,6 +111,7 @@ describe("day view state", () => {
       zoom: 2.25,
       centerX: 0.2,
       centerY: 0.8,
+      verticalScale: 2.4,
     });
     state.stackOrder = ["tp-a", "tp-b"];
     state.relationsEnabled = true;

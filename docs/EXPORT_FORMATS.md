@@ -47,10 +47,12 @@ Portable export creates:
 
 ```text
 portable/
+├── manifest.json
 ├── _TimePoint_Export.md
 ├── TimePoint/Days/YYYY/MM/YYYY-MM-DD/
 │   ├── _Timeline.md
-│   └── HHmm--<stable-id>.md
+│   ├── HHmm--<stable-id>.md
+│   └── attachments/<hash>-<original-name>
 └── TimePoint/Snapshots/<snapshot-id>/
     ├── snapshot.md
     └── preview.webp
@@ -60,14 +62,29 @@ Copy the enclosed `TimePoint` folder into another Vault. The root guide is writt
 caught write fails, TimePoint attempts to remove every file created by that operation and does not
 show a success result. Every selected date receives an index, including empty dates, so its
 validated viewport, minimap, relationship toggle, stacking, and reference-card layout survive.
-Only completed snapshots associated with exported events are included; each preview is written
-before its `snapshot.md` completion marker. A missing or invalid associated snapshot blocks the
-portable operation instead of silently producing a broken relationship graph.
+`manifest.json` uses the shared `timepoint-portable` Schema 1 contract and records event dates plus
+every local attachment's owner, archive path, size, SHA-256, MIME, kind, and render policy. TimePoint
+follows only the first layer of directly referenced, non-Markdown Vault files; it does not recurse
+through linked notes. Attachment references are rewritten only in exported event copies. Vault
+source Markdown is never modified.
+
+Each attachment is limited to 50 MiB and the attachment batch to 500 MiB. Unsafe MIME/magic-byte
+combinations block the whole operation. Only completed snapshots associated with exported events
+are included; each preview is written before its `snapshot.md` completion marker. A missing or
+invalid associated snapshot blocks the portable operation instead of silently producing a broken
+relationship graph.
+
+The Import panel also accepts a ZIP containing this manifest and tree, including archives produced
+by TimePoint Web. Import is preview-first, never overwrites an existing Vault path, rechecks the
+fingerprint before writing, and removes every newly created file after a caught failure. Archive
+preflight rejects traversal, control-character or case-colliding paths, encryption, ZIP64,
+multivolume files, header mismatches, more than 5,000 members, oversized expansion, and compression
+bombs before decompression.
 
 ## Whole-operation blockers
 
 No output is written when any selected date contains an error diagnostic or future schema, when an
 ID repeats in the selected range, or when data changes after preview. Existing output is never
 overwritten; a numeric suffix is chosen instead. The preview fingerprint covers event data, daily
-view-state blocks, and used snapshot files, so a layout, relationship, or cache change also requires
-a new preview.
+view-state blocks, direct local attachments, and used snapshot files, so a layout, relationship,
+attachment, or cache change also requires a new preview.
