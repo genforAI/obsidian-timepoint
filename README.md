@@ -8,6 +8,17 @@ user enables them.
 > `0.7.0-beta.1` is a desktop beta. Keep a normal vault backup and report reproducible problems
 > with private note text removed.
 
+## How this project was built
+
+J. Hall defines the product direction and performs hands-on testing and acceptance in Obsidian.
+OpenAI Codex produced the implementation, UI, performance optimization, automated test suite,
+packaging, and release automation under that human direction and review.
+
+The current public candidate passes 207/207 full-suite tests and 90/90 focused stress tests. The
+same source also passes formatting, ESLint, strict TypeScript, production build, bundle smoke, and
+high-severity dependency audit gates on Node.js 20 and 22. See [Validation](docs/VALIDATION.md) and
+[Stress tests](docs/STRESS_TESTS.md) for the exact scope and remaining physical runtime gates.
+
 ## What it does
 
 - Stores every event as an independent Markdown note with stable Schema 1 metadata.
